@@ -200,16 +200,21 @@ export function usePokerGame(): UsePokerGameResult {
             const holeCard1 = seat.holeCard1.toNumber();
             const holeCard2 = seat.holeCard2.toNumber();
 
+            // Check if cards have been dealt (status is Playing or AllIn means cards are dealt)
+            const hasCards = seat.status.playing !== undefined || seat.status.allIn !== undefined;
+
             players.push({
               seatIndex: seat.seatIndex,
               player: seat.player.toString(),
               chips: seat.chips.toNumber(),
               currentBet: seat.currentBet.toNumber(),
-              holeCards: isCurrentPlayer
-                ? [holeCard1 || null, holeCard2 || null]
+              // Show cards if: current player AND cards have been dealt
+              // Note: card value 0 is valid (2 of Hearts), so don't use || null
+              holeCards: isCurrentPlayer && hasCards
+                ? [holeCard1, holeCard2]
                 : [null, null],
               status: mapPlayerStatus(seat.status),
-              isActive: seat.status.playing !== undefined || seat.status.allIn !== undefined,
+              isActive: hasCards,
             });
           } catch (e) {
             // Seat PDA doesn't exist yet

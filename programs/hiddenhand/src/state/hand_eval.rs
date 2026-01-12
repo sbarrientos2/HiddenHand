@@ -527,4 +527,360 @@ mod tests {
         let winners = find_winners(&player_cards);
         assert_eq!(winners.len(), 2);
     }
+
+    // ==================== EDGE CASE TESTS ====================
+
+    #[test]
+    fn test_flush_kicker_comparison() {
+        // Player 0: A-Q-9-7-5 flush
+        // Player 1: A-Q-9-7-4 flush (loses on 5th kicker)
+        let cards_0 = [
+            card(12, 0), // Ah
+            card(10, 0), // Qh
+            card(7, 0),  // 9h
+            card(5, 0),  // 7h
+            card(3, 0),  // 5h
+            card(0, 1),  // 2d (not used)
+            card(1, 2),  // 3c (not used)
+        ];
+        let cards_1 = [
+            card(12, 0), // Ah
+            card(10, 0), // Qh
+            card(7, 0),  // 9h
+            card(5, 0),  // 7h
+            card(2, 0),  // 4h (worse than 5h)
+            card(0, 1),  // 2d
+            card(1, 2),  // 3c
+        ];
+        let eval_0 = evaluate_hand(&cards_0);
+        let eval_1 = evaluate_hand(&cards_1);
+        assert_eq!(eval_0.rank, HandRank::Flush);
+        assert_eq!(eval_1.rank, HandRank::Flush);
+        assert_eq!(eval_0.compare(&eval_1), std::cmp::Ordering::Greater);
+    }
+
+    #[test]
+    fn test_flush_same_kickers_split() {
+        // Both have A-K-Q-J-9 flush (different suits, but flush only cares about ranks)
+        // Community: A-K-Q-J-9 all hearts
+        // Player 0: 2d 3c (uses community flush)
+        // Player 1: 4d 5c (uses community flush)
+        let cards_0 = [
+            card(0, 1),  // 2d
+            card(1, 2),  // 3c
+            card(12, 0), // Ah
+            card(11, 0), // Kh
+            card(10, 0), // Qh
+            card(9, 0),  // Jh
+            card(7, 0),  // 9h
+        ];
+        let cards_1 = [
+            card(2, 1),  // 4d
+            card(3, 2),  // 5c
+            card(12, 0), // Ah
+            card(11, 0), // Kh
+            card(10, 0), // Qh
+            card(9, 0),  // Jh
+            card(7, 0),  // 9h
+        ];
+        let player_cards = [(0, cards_0), (1, cards_1)];
+        let winners = find_winners(&player_cards);
+        assert_eq!(winners.len(), 2); // Split pot
+    }
+
+    #[test]
+    fn test_full_house_comparison() {
+        // Player 0: KKK-QQ (Kings full of Queens)
+        // Player 1: QQQ-KK (Queens full of Kings)
+        // Kings full beats Queens full
+        let cards_0 = [
+            card(11, 0), // Kh
+            card(11, 1), // Kd
+            card(11, 2), // Kc
+            card(10, 0), // Qh
+            card(10, 1), // Qd
+            card(0, 2),  // 2c
+            card(1, 3),  // 3s
+        ];
+        let cards_1 = [
+            card(10, 0), // Qh
+            card(10, 1), // Qd
+            card(10, 2), // Qc
+            card(11, 0), // Kh
+            card(11, 1), // Kd
+            card(0, 2),  // 2c
+            card(1, 3),  // 3s
+        ];
+        let eval_0 = evaluate_hand(&cards_0);
+        let eval_1 = evaluate_hand(&cards_1);
+        assert_eq!(eval_0.rank, HandRank::FullHouse);
+        assert_eq!(eval_1.rank, HandRank::FullHouse);
+        assert_eq!(eval_0.compare(&eval_1), std::cmp::Ordering::Greater);
+    }
+
+    #[test]
+    fn test_two_pair_kicker() {
+        // Player 0: AA-KK-Q kicker
+        // Player 1: AA-KK-J kicker
+        // Same two pair, but Q kicker beats J kicker
+        let cards_0 = [
+            card(12, 0), // Ah
+            card(12, 1), // Ad
+            card(11, 2), // Kc
+            card(11, 3), // Ks
+            card(10, 0), // Qh (kicker)
+            card(0, 1),  // 2d
+            card(1, 2),  // 3c
+        ];
+        let cards_1 = [
+            card(12, 2), // Ac
+            card(12, 3), // As
+            card(11, 0), // Kh
+            card(11, 1), // Kd
+            card(9, 0),  // Jh (worse kicker)
+            card(0, 2),  // 2c
+            card(1, 3),  // 3s
+        ];
+        let eval_0 = evaluate_hand(&cards_0);
+        let eval_1 = evaluate_hand(&cards_1);
+        assert_eq!(eval_0.rank, HandRank::TwoPair);
+        assert_eq!(eval_1.rank, HandRank::TwoPair);
+        assert_eq!(eval_0.compare(&eval_1), std::cmp::Ordering::Greater);
+    }
+
+    #[test]
+    fn test_two_pair_second_pair_matters() {
+        // Player 0: AA-QQ
+        // Player 1: AA-JJ
+        // Same high pair (Aces), but Queens beats Jacks
+        let cards_0 = [
+            card(12, 0), // Ah
+            card(12, 1), // Ad
+            card(10, 2), // Qc
+            card(10, 3), // Qs
+            card(5, 0),  // 7h
+            card(0, 1),  // 2d
+            card(1, 2),  // 3c
+        ];
+        let cards_1 = [
+            card(12, 2), // Ac
+            card(12, 3), // As
+            card(9, 0),  // Jh
+            card(9, 1),  // Jd
+            card(5, 2),  // 7c
+            card(0, 2),  // 2c
+            card(1, 3),  // 3s
+        ];
+        let eval_0 = evaluate_hand(&cards_0);
+        let eval_1 = evaluate_hand(&cards_1);
+        assert_eq!(eval_0.rank, HandRank::TwoPair);
+        assert_eq!(eval_1.rank, HandRank::TwoPair);
+        assert_eq!(eval_0.compare(&eval_1), std::cmp::Ordering::Greater);
+    }
+
+    #[test]
+    fn test_one_pair_kicker_chain() {
+        // Player 0: AA-K-Q-J
+        // Player 1: AA-K-Q-T
+        // Same pair, same first two kickers, third kicker decides
+        let cards_0 = [
+            card(12, 0), // Ah
+            card(12, 1), // Ad
+            card(11, 2), // Kc
+            card(10, 3), // Qs
+            card(9, 0),  // Jh
+            card(0, 1),  // 2d
+            card(1, 2),  // 3c
+        ];
+        let cards_1 = [
+            card(12, 2), // Ac
+            card(12, 3), // As
+            card(11, 0), // Kh
+            card(10, 1), // Qd
+            card(8, 0),  // Th (worse than J)
+            card(0, 2),  // 2c
+            card(1, 3),  // 3s
+        ];
+        let eval_0 = evaluate_hand(&cards_0);
+        let eval_1 = evaluate_hand(&cards_1);
+        assert_eq!(eval_0.rank, HandRank::OnePair);
+        assert_eq!(eval_1.rank, HandRank::OnePair);
+        assert_eq!(eval_0.compare(&eval_1), std::cmp::Ordering::Greater);
+    }
+
+    #[test]
+    fn test_trips_kicker() {
+        // Player 0: KKK-A-Q
+        // Player 1: KKK-A-J
+        // Same trips, same first kicker, second kicker decides
+        let cards_0 = [
+            card(11, 0), // Kh
+            card(11, 1), // Kd
+            card(11, 2), // Kc
+            card(12, 3), // As
+            card(10, 0), // Qh
+            card(0, 1),  // 2d
+            card(1, 2),  // 3c
+        ];
+        let cards_1 = [
+            card(11, 0), // Kh
+            card(11, 1), // Kd
+            card(11, 3), // Ks
+            card(12, 2), // Ac
+            card(9, 0),  // Jh (worse kicker)
+            card(0, 2),  // 2c
+            card(1, 3),  // 3s
+        ];
+        let eval_0 = evaluate_hand(&cards_0);
+        let eval_1 = evaluate_hand(&cards_1);
+        assert_eq!(eval_0.rank, HandRank::ThreeOfAKind);
+        assert_eq!(eval_1.rank, HandRank::ThreeOfAKind);
+        assert_eq!(eval_0.compare(&eval_1), std::cmp::Ordering::Greater);
+    }
+
+    #[test]
+    fn test_high_card_all_kickers() {
+        // Player 0: A-K-Q-J-9
+        // Player 1: A-K-Q-J-8
+        // All high cards, 5th card decides
+        let cards_0 = [
+            card(12, 0), // Ah
+            card(11, 1), // Kd
+            card(10, 2), // Qc
+            card(9, 3),  // Js
+            card(7, 0),  // 9h
+            card(0, 1),  // 2d
+            card(1, 2),  // 3c
+        ];
+        let cards_1 = [
+            card(12, 1), // Ad
+            card(11, 2), // Kc
+            card(10, 3), // Qs
+            card(9, 0),  // Jh
+            card(6, 1),  // 8d (worse)
+            card(0, 2),  // 2c
+            card(1, 3),  // 3s
+        ];
+        let eval_0 = evaluate_hand(&cards_0);
+        let eval_1 = evaluate_hand(&cards_1);
+        assert_eq!(eval_0.rank, HandRank::HighCard);
+        assert_eq!(eval_1.rank, HandRank::HighCard);
+        assert_eq!(eval_0.compare(&eval_1), std::cmp::Ordering::Greater);
+    }
+
+    #[test]
+    fn test_straight_flush_beats_quads() {
+        // Player 0: 6-high straight flush
+        // Player 1: Four Aces
+        // Straight flush beats four of a kind
+        let cards_0 = [
+            card(4, 0),  // 6h
+            card(3, 0),  // 5h
+            card(2, 0),  // 4h
+            card(1, 0),  // 3h
+            card(0, 0),  // 2h
+            card(12, 1), // Ad
+            card(11, 2), // Kc
+        ];
+        let cards_1 = [
+            card(12, 0), // Ah
+            card(12, 1), // Ad
+            card(12, 2), // Ac
+            card(12, 3), // As
+            card(11, 0), // Kh
+            card(10, 1), // Qd
+            card(9, 2),  // Jc
+        ];
+        let eval_0 = evaluate_hand(&cards_0);
+        let eval_1 = evaluate_hand(&cards_1);
+        assert_eq!(eval_0.rank, HandRank::StraightFlush);
+        assert_eq!(eval_1.rank, HandRank::FourOfAKind);
+        assert_eq!(eval_0.compare(&eval_1), std::cmp::Ordering::Greater);
+    }
+
+    #[test]
+    fn test_quads_kicker() {
+        // Player 0: AAAA-K
+        // Player 1: AAAA-Q
+        // Same quads, kicker decides
+        let cards_0 = [
+            card(12, 0), // Ah
+            card(12, 1), // Ad
+            card(12, 2), // Ac
+            card(12, 3), // As
+            card(11, 0), // Kh
+            card(0, 1),  // 2d
+            card(1, 2),  // 3c
+        ];
+        let cards_1 = [
+            card(12, 0), // Ah
+            card(12, 1), // Ad
+            card(12, 2), // Ac
+            card(12, 3), // As
+            card(10, 0), // Qh (worse kicker)
+            card(0, 1),  // 2d
+            card(1, 2),  // 3c
+        ];
+        let eval_0 = evaluate_hand(&cards_0);
+        let eval_1 = evaluate_hand(&cards_1);
+        assert_eq!(eval_0.rank, HandRank::FourOfAKind);
+        assert_eq!(eval_1.rank, HandRank::FourOfAKind);
+        assert_eq!(eval_0.compare(&eval_1), std::cmp::Ordering::Greater);
+    }
+
+    #[test]
+    fn test_straight_flush_vs_straight_flush() {
+        // Player 0: 9-high straight flush
+        // Player 1: 8-high straight flush
+        let cards_0 = [
+            card(7, 0),  // 9h
+            card(6, 0),  // 8h
+            card(5, 0),  // 7h
+            card(4, 0),  // 6h
+            card(3, 0),  // 5h
+            card(0, 1),  // 2d
+            card(1, 2),  // 3c
+        ];
+        let cards_1 = [
+            card(6, 1),  // 8d
+            card(5, 1),  // 7d
+            card(4, 1),  // 6d
+            card(3, 1),  // 5d
+            card(2, 1),  // 4d
+            card(0, 2),  // 2c
+            card(1, 3),  // 3s
+        ];
+        let eval_0 = evaluate_hand(&cards_0);
+        let eval_1 = evaluate_hand(&cards_1);
+        assert_eq!(eval_0.rank, HandRank::StraightFlush);
+        assert_eq!(eval_1.rank, HandRank::StraightFlush);
+        assert_eq!(eval_0.compare(&eval_1), std::cmp::Ordering::Greater);
+    }
+
+    #[test]
+    fn test_board_plays_split() {
+        // Community: A-K-Q-J-T (broadway straight)
+        // Both players have lower cards - board plays
+        let cards_0 = [
+            card(0, 0),  // 2h
+            card(1, 1),  // 3d
+            card(12, 2), // Ac
+            card(11, 3), // Ks
+            card(10, 0), // Qh
+            card(9, 1),  // Jd
+            card(8, 2),  // Tc
+        ];
+        let cards_1 = [
+            card(2, 0),  // 4h
+            card(3, 1),  // 5d
+            card(12, 2), // Ac
+            card(11, 3), // Ks
+            card(10, 0), // Qh
+            card(9, 1),  // Jd
+            card(8, 2),  // Tc
+        ];
+        let player_cards = [(0, cards_0), (1, cards_1)];
+        let winners = find_winners(&player_cards);
+        assert_eq!(winners.len(), 2); // Both play the board - split
+    }
 }

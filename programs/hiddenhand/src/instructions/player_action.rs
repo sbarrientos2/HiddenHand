@@ -278,11 +278,13 @@ fn get_first_active_left_of_dealer(hand_state: &HandState, max_players: u8) -> u
     dealer
 }
 
-/// Find next player who can actually bet (not folded or all-in)
+/// Find next player who needs to act (not folded, not all-in, hasn't acted this round)
 fn find_next_player_who_can_act(hand_state: &HandState, after_seat: u8, max_players: u8) -> Option<u8> {
     let mut next = (after_seat + 1) % max_players;
     for _ in 0..max_players {
-        if hand_state.is_player_active(next) && !hand_state.is_player_all_in(next) {
+        if hand_state.is_player_active(next)
+            && !hand_state.is_player_all_in(next)
+            && !hand_state.has_player_acted(next) {
             return Some(next);
         }
         next = (next + 1) % max_players;

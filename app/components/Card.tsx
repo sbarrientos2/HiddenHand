@@ -21,7 +21,7 @@ const SUIT_COLORS: Record<string, string> = {
   c: "text-gray-900",
   s: "text-gray-900",
 };
-const RANKS = ["2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"];
+const RANKS = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"];
 
 const sizeClasses = {
   sm: "w-10 h-14 text-xs",

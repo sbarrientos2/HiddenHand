@@ -104,39 +104,46 @@ pub fn handler(ctx: Context<DealAllCards>) -> Result<()> {
     hand_state.community_revealed = 0;
     deck_state.deal_index = 5; // Community cards reserved at indices 0-4
 
-    // Track seat indices
+    // Track seat indices and active player count
     let sb_index = sb_seat.seat_index;
     let bb_index = bb_seat.seat_index;
-
-    // Deal to SB and BB first (they're in named accounts)
-    // We'll deal to all players in seat order
-
-    // Post blinds
-    let sb_amount = sb_seat.place_bet(table.small_blind);
-    let bb_amount = bb_seat.place_bet(table.big_blind);
-    hand_state.pot = sb_amount + bb_amount;
-
-    msg!("SB (seat {}) posts {}", sb_index, sb_amount);
-    msg!("BB (seat {}) posts {}", bb_index, bb_amount);
-
-    // Mark blinds as having acted (they've posted)
-    // But they still need to act if there's a raise
-    sb_seat.status = PlayerStatus::Playing;
-    bb_seat.status = PlayerStatus::Playing;
-
-    // Deal cards to SB and BB
+    let mut active_players = hand_state.active_players;
+    let mut active_count = 0u8;
     let mut deal_idx = deck_state.deal_index as usize;
 
-    sb_seat.hole_card_1 = deck[deal_idx] as u128;
-    sb_seat.hole_card_2 = deck[deal_idx + 1] as u128;
-    deal_idx += 2;
+    // Deal to SB if they have chips
+    if sb_seat.chips > 0 {
+        let sb_amount = sb_seat.place_bet(table.small_blind);
+        hand_state.pot = hand_state.pot.saturating_add(sb_amount);
+        sb_seat.status = PlayerStatus::Playing;
+        sb_seat.hole_card_1 = deck[deal_idx] as u128;
+        sb_seat.hole_card_2 = deck[deal_idx + 1] as u128;
+        deal_idx += 2;
+        active_count += 1;
+        msg!("SB (seat {}) posts {} and receives cards", sb_index, sb_amount);
+    } else {
+        // Remove from active players - no chips
+        active_players &= !(1 << sb_index);
+        sb_seat.status = PlayerStatus::Sitting;
+        msg!("SB (seat {}) has no chips - sitting out", sb_index);
+    }
 
-    bb_seat.hole_card_1 = deck[deal_idx] as u128;
-    bb_seat.hole_card_2 = deck[deal_idx + 1] as u128;
-    deal_idx += 2;
-
-    msg!("Dealt hole cards to SB (seat {})", sb_index);
-    msg!("Dealt hole cards to BB (seat {})", bb_index);
+    // Deal to BB if they have chips
+    if bb_seat.chips > 0 {
+        let bb_amount = bb_seat.place_bet(table.big_blind);
+        hand_state.pot = hand_state.pot.saturating_add(bb_amount);
+        bb_seat.status = PlayerStatus::Playing;
+        bb_seat.hole_card_1 = deck[deal_idx] as u128;
+        bb_seat.hole_card_2 = deck[deal_idx + 1] as u128;
+        deal_idx += 2;
+        active_count += 1;
+        msg!("BB (seat {}) posts {} and receives cards", bb_index, bb_amount);
+    } else {
+        // Remove from active players - no chips
+        active_players &= !(1 << bb_index);
+        bb_seat.status = PlayerStatus::Sitting;
+        msg!("BB (seat {}) has no chips - sitting out", bb_index);
+    }
 
     // Deal to other players via remaining_accounts
     for account_info in ctx.remaining_accounts.iter() {
@@ -144,30 +151,59 @@ pub fn handler(ctx: Context<DealAllCards>) -> Result<()> {
         if data.len() >= 8 {
             let seat = PlayerSeat::try_deserialize(&mut &data[..])?;
 
-            // Skip SB and BB (already dealt)
+            // Skip SB and BB (already handled)
             if seat.table == table.key() &&
                seat.seat_index != sb_index &&
                seat.seat_index != bb_index {
+                let seat_index = seat.seat_index;
+                let has_chips = seat.chips > 0;
                 drop(data);
 
                 let mut data = account_info.try_borrow_mut_data()?;
                 let mut seat = PlayerSeat::try_deserialize(&mut &data[..])?;
 
-                seat.hole_card_1 = deck[deal_idx] as u128;
-                seat.hole_card_2 = deck[deal_idx + 1] as u128;
-                seat.status = PlayerStatus::Playing;
-                seat.current_bet = 0;
-                seat.total_bet_this_hand = 0;
-                deal_idx += 2;
-
-                msg!("Dealt hole cards to seat {}", seat.seat_index);
+                if has_chips {
+                    // Player has chips - deal cards
+                    seat.hole_card_1 = deck[deal_idx] as u128;
+                    seat.hole_card_2 = deck[deal_idx + 1] as u128;
+                    seat.status = PlayerStatus::Playing;
+                    seat.current_bet = 0;
+                    seat.total_bet_this_hand = 0;
+                    deal_idx += 2;
+                    active_count += 1;
+                    msg!("Dealt hole cards to seat {}", seat_index);
+                } else {
+                    // Player has no chips - sit them out
+                    active_players &= !(1 << seat_index);
+                    seat.status = PlayerStatus::Sitting;
+                    msg!("Seat {} has no chips - sitting out", seat_index);
+                }
 
                 seat.try_serialize(&mut *data)?;
             }
         }
     }
 
+    // Update hand state with actual active players
+    hand_state.active_players = active_players;
+    hand_state.active_count = active_count;
     deck_state.deal_index = deal_idx as u8;
+
+    // Verify we have enough active players
+    require!(
+        active_count >= 2,
+        HiddenHandError::NotEnoughPlayers
+    );
+
+    // Find first active player to act (may need to skip players with no chips)
+    let mut action_pos = hand_state.action_on;
+    for _ in 0..table.max_players {
+        if (active_players & (1 << action_pos)) != 0 {
+            break;
+        }
+        action_pos = (action_pos + 1) % table.max_players;
+    }
+    hand_state.action_on = action_pos;
 
     // Advance to PreFlop
     hand_state.phase = GamePhase::PreFlop;
@@ -175,9 +211,10 @@ pub fn handler(ctx: Context<DealAllCards>) -> Result<()> {
     hand_state.all_in_players = 0; // No one is all-in yet
 
     msg!(
-        "Cards dealt. Pot: {}. Phase: PreFlop. Action on seat {}",
+        "Cards dealt. Pot: {}. Phase: PreFlop. Action on seat {}. Active players: {}",
         hand_state.pot,
-        hand_state.action_on
+        hand_state.action_on,
+        active_count
     );
 
     Ok(())

@@ -301,8 +301,8 @@ export default function Home() {
                       </div>
                     )}
 
-                    {/* Leave table */}
-                    {currentPlayer && gameState.tableStatus === "Waiting" && (
+                    {/* Leave table - show when waiting OR when player has no chips */}
+                    {currentPlayer && (gameState.tableStatus === "Waiting" || currentPlayer.chips === 0) && (
                       <button
                         onClick={() => leaveTable()}
                         disabled={loading}
@@ -310,6 +310,14 @@ export default function Home() {
                       >
                         Leave Table
                       </button>
+                    )}
+
+                    {/* Rebuy message for players with 0 chips */}
+                    {currentPlayer && currentPlayer.chips === 0 && (
+                      <div className="flex items-center gap-2 bg-orange-900/30 border border-orange-600/50 rounded-lg px-3 py-2">
+                        <span className="text-orange-400 text-sm">No chips!</span>
+                        <span className="text-gray-400 text-sm">Leave and rejoin to rebuy.</span>
+                      </div>
                     )}
                   </>
                 )}
@@ -332,33 +340,59 @@ export default function Home() {
             {/* Authority Controls (Start Hand, Deal, Showdown) */}
             {gameState.isAuthority && gameState.table && (
               <div className="bg-yellow-900/30 border border-yellow-600/50 rounded-xl p-4">
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-4 flex-wrap">
                   <span className="text-yellow-400 text-sm font-medium">
                     Table Authority Controls:
                   </span>
 
-                  {/* Start Hand - when waiting with 2+ players */}
-                  {gameState.tableStatus === "Waiting" &&
-                    gameState.players.filter((p) => p.status !== "empty").length >= 2 && (
-                      <button
-                        onClick={() => startHand()}
-                        disabled={loading}
-                        className="bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm font-medium"
-                      >
-                        Start Hand
-                      </button>
-                    )}
+                  {/* Count players with chips */}
+                  {(() => {
+                    const playersWithChips = gameState.players.filter(
+                      (p) => p.status !== "empty" && p.chips > 0
+                    ).length;
+                    const totalPlayers = gameState.players.filter(
+                      (p) => p.status !== "empty"
+                    ).length;
+                    const canStart = playersWithChips >= 2;
 
-                  {/* Deal Cards - when in Dealing phase */}
-                  {gameState.phase === "Dealing" && (
-                    <button
-                      onClick={() => dealCards()}
-                      disabled={loading}
-                      className="bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm font-medium"
-                    >
-                      Deal Cards
-                    </button>
-                  )}
+                    return (
+                      <>
+                        {/* Start Hand - when waiting with 2+ players WITH chips */}
+                        {gameState.tableStatus === "Waiting" && totalPlayers >= 2 && (
+                          canStart ? (
+                            <button
+                              onClick={() => startHand()}
+                              disabled={loading}
+                              className="bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm font-medium"
+                            >
+                              Start Hand
+                            </button>
+                          ) : (
+                            <span className="text-orange-400 text-sm">
+                              Need 2+ players with chips ({playersWithChips}/{totalPlayers} have chips)
+                            </span>
+                          )
+                        )}
+
+                        {/* Deal Cards - when in Dealing phase AND 2+ players have chips */}
+                        {gameState.phase === "Dealing" && (
+                          canStart ? (
+                            <button
+                              onClick={() => dealCards()}
+                              disabled={loading}
+                              className="bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm font-medium"
+                            >
+                              Deal Cards
+                            </button>
+                          ) : (
+                            <span className="text-orange-400 text-sm">
+                              Cannot deal - need 2+ players with chips ({playersWithChips}/{totalPlayers} have chips)
+                            </span>
+                          )
+                        )}
+                      </>
+                    );
+                  })()}
 
                   {/* Showdown - when in Showdown phase OR when pot needs to be awarded */}
                   {(gameState.phase === "Showdown" ||

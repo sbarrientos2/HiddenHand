@@ -42,9 +42,9 @@ pub fn handler(ctx: Context<LeaveTable>) -> Result<()> {
     let table = &mut ctx.accounts.table;
     let player_seat = &ctx.accounts.player_seat;
 
-    // Cannot leave during active hand
+    // Cannot leave during active hand UNLESS player has 0 chips (not participating)
     require!(
-        table.status != TableStatus::Playing,
+        table.status != TableStatus::Playing || player_seat.chips == 0,
         HiddenHandError::CannotLeaveDuringHand
     );
 

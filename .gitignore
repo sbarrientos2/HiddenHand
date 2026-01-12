@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+target/
+.anchor/
+
+# IDL outputs
+idl/
+
+# Test ledger
+test-ledger/
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+
+# Env files
+.env
+.env.local

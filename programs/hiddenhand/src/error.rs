@@ -1,0 +1,94 @@
+use anchor_lang::prelude::*;
+
+#[error_code]
+pub enum HiddenHandError {
+    #[msg("Table is full")]
+    TableFull,
+
+    #[msg("Table is not full enough to start")]
+    NotEnoughPlayers,
+
+    #[msg("Player is not at this table")]
+    PlayerNotAtTable,
+
+    #[msg("Player is already at this table")]
+    PlayerAlreadyAtTable,
+
+    #[msg("Invalid seat index")]
+    InvalidSeatIndex,
+
+    #[msg("Seat is already occupied")]
+    SeatOccupied,
+
+    #[msg("Seat is empty")]
+    SeatEmpty,
+
+    #[msg("Not player's turn")]
+    NotPlayersTurn,
+
+    #[msg("Invalid action for current game state")]
+    InvalidAction,
+
+    #[msg("Insufficient chips")]
+    InsufficientChips,
+
+    #[msg("Buy-in amount out of range")]
+    InvalidBuyIn,
+
+    #[msg("Hand is not in progress")]
+    HandNotInProgress,
+
+    #[msg("Hand is already in progress")]
+    HandAlreadyInProgress,
+
+    #[msg("Cannot fold - no bet to fold from")]
+    CannotFold,
+
+    #[msg("Cannot check - must call or raise")]
+    CannotCheck,
+
+    #[msg("Raise amount too small")]
+    RaiseTooSmall,
+
+    #[msg("Betting round not complete")]
+    BettingRoundNotComplete,
+
+    #[msg("Invalid phase for this action")]
+    InvalidPhase,
+
+    #[msg("Player action timeout")]
+    ActionTimeout,
+
+    #[msg("Only table authority can perform this action")]
+    UnauthorizedAuthority,
+
+    #[msg("Showdown requires at least 2 active players")]
+    ShowdownRequiresPlayers,
+
+    #[msg("Invalid card index")]
+    InvalidCardIndex,
+
+    #[msg("Deck already shuffled for this hand")]
+    DeckAlreadyShuffled,
+
+    #[msg("Cards not yet dealt")]
+    CardsNotDealt,
+
+    #[msg("All community cards already revealed")]
+    AllCardsRevealed,
+
+    #[msg("Player has already folded")]
+    PlayerFolded,
+
+    #[msg("Player is already all-in")]
+    PlayerAlreadyAllIn,
+
+    #[msg("Table is not in waiting state")]
+    TableNotWaiting,
+
+    #[msg("Cannot leave during active hand")]
+    CannotLeaveDuringHand,
+
+    #[msg("Arithmetic overflow")]
+    Overflow,
+}

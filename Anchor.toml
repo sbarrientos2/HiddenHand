@@ -5,12 +5,12 @@ package_manager = "npm"
 resolution = true
 skip-lint = false
 
-[programs.localnet]
-hiddenhand = "7skCDLugS15d6cfrtZZCc5rpe5sDB998WjVBacP5qsTp"
-
 [programs.devnet]
 hiddenhand = "7skCDLugS15d6cfrtZZCc5rpe5sDB998WjVBacP5qsTp"
 inco_lightning = "5sjEbPiqgZrYwR31ahR6Uk9wf5awoX61YGg7jExQSwaj"
+
+[programs.localnet]
+hiddenhand = "HS3GdhRBU3jMT4G6ogKVktKaibqsMhPRhDhNsmgzeB8Q"
 
 [registry]
 url = "https://api.apr.dev"

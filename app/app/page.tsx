@@ -1,7 +1,7 @@
 "use client";
 
 import { useWallet } from "@solana/wallet-adapter-react";
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
+import { WalletButton } from "@/components/WalletButton";
 import { PokerTable } from "@/components/PokerTable";
 import { ActionPanel } from "@/components/ActionPanel";
 import { useState, useEffect } from "react";
@@ -57,9 +57,9 @@ export default function Home() {
     gameState.phase !== "Showdown" &&
     gameState.phase !== "Settled";
 
-  // Calculate action panel values
-  const toCall = gameState.currentBet - (currentPlayer?.currentBet ?? 0);
-  const canCheck = toCall === 0;
+  // Calculate action panel values (never negative)
+  const toCall = Math.max(0, gameState.currentBet - (currentPlayer?.currentBet ?? 0));
+  const canCheck = toCall <= 0;
 
   // Handle player action
   const handleAction = async (action: string, amount?: number) => {
@@ -149,7 +149,7 @@ export default function Home() {
         </div>
 
         <div className="flex items-center gap-4">
-          <WalletMultiButton className="!bg-green-600 hover:!bg-green-500" />
+          <WalletButton className="!bg-green-600 hover:!bg-green-500" />
         </div>
       </header>
 
@@ -164,7 +164,7 @@ export default function Home() {
               The only poker game where the house can&apos;t see your cards.
               Connect your wallet to start playing.
             </p>
-            <WalletMultiButton className="!bg-green-600 hover:!bg-green-500 !text-lg !px-8 !py-4" />
+            <WalletButton className="!bg-green-600 hover:!bg-green-500 !text-lg !px-8 !py-4" />
 
             {/* Features */}
             <div className="grid md:grid-cols-3 gap-8 mt-16 max-w-4xl mx-auto">
@@ -345,14 +345,15 @@ export default function Home() {
                     </button>
                   )}
 
-                  {/* Showdown - when in Showdown phase */}
-                  {gameState.phase === "Showdown" && (
+                  {/* Showdown - when in Showdown phase OR when pot needs to be awarded */}
+                  {(gameState.phase === "Showdown" ||
+                    (gameState.phase === "Settled" && gameState.pot > 0)) && (
                     <button
                       onClick={() => showdown()}
                       disabled={loading}
                       className="bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm font-medium"
                     >
-                      Run Showdown
+                      {gameState.phase === "Showdown" ? "Run Showdown" : "Award Pot to Winner"}
                     </button>
                   )}
 

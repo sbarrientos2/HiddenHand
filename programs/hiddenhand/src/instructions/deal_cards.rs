@@ -96,11 +96,13 @@ pub fn handler(ctx: Context<DealAllCards>) -> Result<()> {
     }
     deck_state.is_shuffled = true;
 
-    // Deal community cards (first 5 cards, stored hidden)
-    hand_state.community_cards = vec![
-        deck[0], deck[1], deck[2], deck[3], deck[4]
-    ];
-    deck_state.deal_index = 5;
+    // Store community cards in deck_state (first 5 cards)
+    // They remain hidden in hand_state until revealed during phase transitions
+    // Cards 0-4 are community cards, stored in deck_state.cards[0..5]
+    // hand_state.community_cards uses 255 to indicate hidden cards
+    hand_state.community_cards = vec![255, 255, 255, 255, 255];
+    hand_state.community_revealed = 0;
+    deck_state.deal_index = 5; // Community cards reserved at indices 0-4
 
     // Track seat indices
     let sb_index = sb_seat.seat_index;

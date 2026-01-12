@@ -565,6 +565,7 @@ export function usePokerGame(): UsePokerGameResult {
       try {
         const handNumber = BigInt(gameState.table.handNumber.toNumber());
         const [handPDA] = getHandPDA(gameState.tablePDA, handNumber);
+        const [deckPDA] = getDeckPDA(gameState.tablePDA, handNumber);
         const [seatPDA] = getSeatPDA(gameState.tablePDA, gameState.currentPlayerSeat);
 
         // Build action argument
@@ -593,6 +594,7 @@ export function usePokerGame(): UsePokerGameResult {
             player: publicKey,
             table: gameState.tablePDA,
             handState: handPDA,
+            deckState: deckPDA,
             playerSeat: seatPDA,
           })
           .rpc();

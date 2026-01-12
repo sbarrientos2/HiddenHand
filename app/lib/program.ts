@@ -1,8 +1,8 @@
 import { PublicKey } from "@solana/web3.js";
 
-// Program ID from Anchor.toml
+// Program ID from Anchor.toml (synced with `anchor keys sync`)
 export const PROGRAM_ID = new PublicKey(
-  "7skCDLugS15d6cfrtZZCc5rpe5sDB998WjVBacP5qsTp"
+  "HS3GdhRBU3jMT4G6ogKVktKaibqsMhPRhDhNsmgzeB8Q"
 );
 
 // PDA Seeds
@@ -38,17 +38,31 @@ export function getSeatPDA(
 }
 
 /**
+ * Convert a number/bigint to 8-byte little-endian buffer
+ * Browser-compatible (no writeBigUInt64LE needed)
+ */
+function toLeU64(value: number | bigint): Uint8Array {
+  const buf = new Uint8Array(8);
+  let n = BigInt(value);
+  const mask = BigInt(0xff);
+  const shift = BigInt(8);
+  for (let i = 0; i < 8; i++) {
+    buf[i] = Number(n & mask);
+    n = n >> shift;
+  }
+  return buf;
+}
+
+/**
  * Derive HandState PDA
  * Seeds: ["hand", table_pubkey, hand_number_u64_le]
  */
 export function getHandPDA(
   table: PublicKey,
-  handNumber: bigint
+  handNumber: number | bigint
 ): [PublicKey, number] {
-  const handNumberBuffer = Buffer.alloc(8);
-  handNumberBuffer.writeBigUInt64LE(handNumber);
   return PublicKey.findProgramAddressSync(
-    [HAND_SEED, table.toBuffer(), handNumberBuffer],
+    [HAND_SEED, table.toBuffer(), toLeU64(handNumber)],
     PROGRAM_ID
   );
 }
@@ -59,12 +73,10 @@ export function getHandPDA(
  */
 export function getDeckPDA(
   table: PublicKey,
-  handNumber: bigint
+  handNumber: number | bigint
 ): [PublicKey, number] {
-  const handNumberBuffer = Buffer.alloc(8);
-  handNumberBuffer.writeBigUInt64LE(handNumber);
   return PublicKey.findProgramAddressSync(
-    [DECK_SEED, table.toBuffer(), handNumberBuffer],
+    [DECK_SEED, table.toBuffer(), toLeU64(handNumber)],
     PROGRAM_ID
   );
 }

@@ -9,7 +9,7 @@ pub use constants::*;
 pub use instructions::*;
 pub use state::*;
 
-declare_id!("7skCDLugS15d6cfrtZZCc5rpe5sDB998WjVBacP5qsTp");
+declare_id!("HS3GdhRBU3jMT4G6ogKVktKaibqsMhPRhDhNsmgzeB8Q");
 
 #[program]
 pub mod hiddenhand {

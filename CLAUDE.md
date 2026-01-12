@@ -26,9 +26,13 @@ This project was started for the **Solana Privacy Hack** hackathon (Jan 12-30, 2
 - Betting logic (Fold/Check/Call/Raise/AllIn)
 - Pot management and action rotation
 - Card encoding (0-51) ready for encryption
+- **Hand evaluation algorithm** (best 5 from 7 cards)
+- **Showdown with pot distribution** (handles split pots)
+- **Mock deal_cards** (pseudorandom shuffle, blinds posting)
+- **14 passing unit tests**
 
 ### What's Next
-1. Write tests for current poker logic
+1. ~~Write tests for current poker logic~~ Done
 2. Start Next.js frontend with game UI
 3. Either wait for Anchor update OR build external Inco integration
 4. Deploy to devnet and demo
@@ -91,29 +95,35 @@ Dealing → PreFlop → Flop → Turn → River → Showdown → Settled
 | `leave_table` | Cash out and leave | Done |
 | `start_hand` | Begin new hand, init deck | Done |
 | `player_action` | Fold/Check/Call/Raise/AllIn | Done |
-| `deal_cards` | Deal encrypted hole cards | TODO (needs Inco) |
-| `reveal_community` | Reveal flop/turn/river | TODO |
-| `showdown` | Reveal hands, determine winner | TODO |
+| `deal_cards` | Shuffle deck, deal hole cards, post blinds | Done (mock) |
+| `showdown` | Evaluate hands, determine winner, distribute pot | Done |
+| `reveal_community` | Reveal flop/turn/river | Auto (in player_action) |
 
 ## File Structure
 
 ```
 hiddenhand/
 ├── programs/hiddenhand/src/
-│   ├── lib.rs              # Program entry (5 instructions)
+│   ├── lib.rs              # Program entry (7 instructions)
 │   ├── constants.rs        # PDA seeds, game constants
 │   ├── error.rs            # 25+ custom errors
 │   ├── state/
 │   │   ├── table.rs        # Table config, seat management
 │   │   ├── hand.rs         # Hand phases, pot, betting round
 │   │   ├── player.rs       # Player seat, chips, hole cards
-│   │   └── deck.rs         # Encrypted deck, card utilities
+│   │   ├── deck.rs         # Deck state, card utilities
+│   │   └── hand_eval.rs    # Hand evaluation (best 5 from 7)
 │   └── instructions/
 │       ├── create_table.rs
 │       ├── join_table.rs
 │       ├── leave_table.rs
 │       ├── start_hand.rs
-│       └── player_action.rs
+│       ├── player_action.rs
+│       ├── deal_cards.rs   # Shuffle & deal (mock)
+│       └── showdown.rs     # Winner determination
+├── marketing/              # Pitch materials
+│   ├── PITCH.md
+│   └── TAGLINES.md
 ├── app/                    # Frontend (TODO)
 ├── tests/
 ├── Anchor.toml

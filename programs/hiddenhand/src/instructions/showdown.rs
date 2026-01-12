@@ -1,0 +1,202 @@
+use anchor_lang::prelude::*;
+
+use crate::constants::*;
+use crate::error::HiddenHandError;
+use crate::state::{evaluate_hand, find_winners, GamePhase, HandState, PlayerSeat, PlayerStatus, Table, TableStatus};
+
+#[derive(Accounts)]
+pub struct Showdown<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [TABLE_SEED, table.table_id.as_ref()],
+        bump = table.bump,
+        constraint = table.authority == authority.key() @ HiddenHandError::UnauthorizedAuthority
+    )]
+    pub table: Account<'info, Table>,
+
+    #[account(
+        mut,
+        seeds = [HAND_SEED, table.key().as_ref(), &table.hand_number.to_le_bytes()],
+        bump = hand_state.bump
+    )]
+    pub hand_state: Account<'info, HandState>,
+
+    /// Vault holding player chips
+    #[account(
+        mut,
+        seeds = [VAULT_SEED, table.key().as_ref()],
+        bump
+    )]
+    pub vault: SystemAccount<'info>,
+}
+
+pub fn handler(ctx: Context<Showdown>) -> Result<()> {
+    let table = &mut ctx.accounts.table;
+    let hand_state = &mut ctx.accounts.hand_state;
+
+    // Validate game phase
+    require!(
+        hand_state.phase == GamePhase::Showdown ||
+        (hand_state.phase == GamePhase::Settled && hand_state.active_count == 1),
+        HiddenHandError::InvalidPhase
+    );
+
+    // Get community cards
+    let community_cards: Vec<u8> = hand_state.community_cards
+        .iter()
+        .filter(|&&c| c != 255)
+        .copied()
+        .collect();
+
+    require!(
+        community_cards.len() == 5 || hand_state.active_count == 1,
+        HiddenHandError::InvalidPhase
+    );
+
+    // Collect player seats from remaining accounts
+    // Store seat index and account index for later updates
+    let mut active_seats: Vec<(u8, usize)> = Vec::new();
+
+    for (idx, account_info) in ctx.remaining_accounts.iter().enumerate() {
+        // Deserialize as PlayerSeat
+        let data = account_info.try_borrow_data()?;
+        if data.len() >= 8 {
+            // Check discriminator (first 8 bytes)
+            let seat = PlayerSeat::try_deserialize(&mut &data[..])?;
+
+            // Only include active players (not folded)
+            if seat.table == table.key() &&
+               (seat.status == PlayerStatus::Playing || seat.status == PlayerStatus::AllIn) {
+                active_seats.push((seat.seat_index, idx));
+            }
+        }
+    }
+
+    let pot = hand_state.pot;
+
+    // Handle single winner (everyone else folded)
+    if hand_state.active_count == 1 {
+        // Find the single remaining player
+        for (seat_idx, acc_idx) in active_seats.iter() {
+            if hand_state.is_player_active(*seat_idx) {
+                // Award entire pot to winner
+                let account_info = &ctx.remaining_accounts[*acc_idx];
+                let mut data = account_info.try_borrow_mut_data()?;
+                let mut seat = PlayerSeat::try_deserialize(&mut &data[..])?;
+                seat.award_chips(pot);
+                seat.try_serialize(&mut *data)?;
+
+                msg!("Player at seat {} wins {} (all others folded)", seat_idx, pot);
+                break;
+            }
+        }
+    } else {
+        // Showdown - evaluate hands and find winners
+        let mut player_hands: Vec<(u8, [u8; 7])> = Vec::new();
+
+        for (seat_idx, acc_idx) in active_seats.iter() {
+            if hand_state.is_player_active(*seat_idx) {
+                let account_info = &ctx.remaining_accounts[*acc_idx];
+                let data = account_info.try_borrow_data()?;
+                let seat = PlayerSeat::try_deserialize(&mut &data[..])?;
+
+                // Build 7-card hand (2 hole cards + 5 community)
+                // For mock: hole cards stored as u128, use lower 8 bits as card value
+                let hole_card_1 = (seat.hole_card_1 & 0xFF) as u8;
+                let hole_card_2 = (seat.hole_card_2 & 0xFF) as u8;
+
+                let seven_cards: [u8; 7] = [
+                    hole_card_1,
+                    hole_card_2,
+                    community_cards.get(0).copied().unwrap_or(0),
+                    community_cards.get(1).copied().unwrap_or(0),
+                    community_cards.get(2).copied().unwrap_or(0),
+                    community_cards.get(3).copied().unwrap_or(0),
+                    community_cards.get(4).copied().unwrap_or(0),
+                ];
+
+                player_hands.push((*seat_idx, seven_cards));
+            }
+        }
+
+        // Find winners
+        let winners = find_winners(&player_hands);
+        let winner_count = winners.len() as u64;
+
+        require!(winner_count > 0, HiddenHandError::InvalidPhase);
+
+        // Calculate split (handle remainder)
+        let share = pot / winner_count;
+        let remainder = pot % winner_count;
+
+        msg!("Showdown - {} winner(s), pot: {}, share: {}", winner_count, pot, share);
+
+        // Distribute winnings
+        for (i, winner_seat_idx) in winners.iter().enumerate() {
+            // Find the winner's account
+            for (seat_idx, acc_idx) in active_seats.iter() {
+                if seat_idx == winner_seat_idx {
+                    let account_info = &ctx.remaining_accounts[*acc_idx];
+                    let mut data = account_info.try_borrow_mut_data()?;
+                    let mut seat = PlayerSeat::try_deserialize(&mut &data[..])?;
+
+                    // First winner gets any remainder
+                    let winnings = if i == 0 { share + remainder } else { share };
+                    seat.award_chips(winnings);
+                    seat.try_serialize(&mut *data)?;
+
+                    // Log the hand
+                    let hole_1 = (seat.hole_card_1 & 0xFF) as u8;
+                    let hole_2 = (seat.hole_card_2 & 0xFF) as u8;
+                    let hand_eval = evaluate_hand(&[
+                        hole_1, hole_2,
+                        community_cards[0], community_cards[1], community_cards[2],
+                        community_cards[3], community_cards[4],
+                    ]);
+
+                    msg!(
+                        "Seat {} wins {} with {:?}",
+                        seat_idx,
+                        winnings,
+                        hand_eval.rank
+                    );
+                    break;
+                }
+            }
+        }
+    }
+
+    // Reset all player states for next hand (including folded players)
+    for account_info in ctx.remaining_accounts.iter() {
+        let data = account_info.try_borrow_data()?;
+        if data.len() >= 8 {
+            let seat = PlayerSeat::try_deserialize(&mut &data[..])?;
+            if seat.table == table.key() {
+                drop(data);
+                let mut data = account_info.try_borrow_mut_data()?;
+                let mut seat = PlayerSeat::try_deserialize(&mut &data[..])?;
+                seat.status = PlayerStatus::Sitting;
+                seat.current_bet = 0;
+                seat.total_bet_this_hand = 0;
+                seat.hole_card_1 = 0;
+                seat.hole_card_2 = 0;
+                seat.has_acted = false;
+                seat.try_serialize(&mut *data)?;
+            }
+        }
+    }
+
+    // Mark hand as settled
+    hand_state.phase = GamePhase::Settled;
+    hand_state.pot = 0;
+
+    // Return table to waiting state
+    table.status = TableStatus::Waiting;
+
+    msg!("Hand #{} complete", hand_state.hand_number);
+
+    Ok(())
+}

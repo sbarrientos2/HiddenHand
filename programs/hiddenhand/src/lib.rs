@@ -48,21 +48,23 @@ pub mod hiddenhand {
         instructions::player_action::handler(ctx, action)
     }
 
+    /// Showdown - evaluate hands and distribute pot
+    /// Remaining accounts should be all player seat accounts
+    pub fn showdown(ctx: Context<Showdown>) -> Result<()> {
+        instructions::showdown::handler(ctx)
+    }
+
+    /// Deal cards to all players and post blinds
+    /// SB and BB seats are named accounts, others via remaining_accounts
+    pub fn deal_cards(ctx: Context<DealAllCards>) -> Result<()> {
+        instructions::deal_cards::handler(ctx)
+    }
+
     // TODO: Add these instructions once Inco integration is complete
-    //
-    // /// Deal encrypted cards to players (uses Inco CPI)
-    // pub fn deal_cards(ctx: Context<DealCards>) -> Result<()> {
-    //     start_hand::deal_cards_handler(ctx)
-    // }
     //
     // /// Reveal community cards
     // pub fn reveal_community(ctx: Context<RevealCommunity>, count: u8) -> Result<()> {
     //     // Reveal flop (3), turn (1), or river (1)
-    // }
-    //
-    // /// Showdown - reveal hands and determine winner
-    // pub fn showdown(ctx: Context<Showdown>) -> Result<()> {
-    //     // Players reveal cards, evaluate hands, distribute pot
     // }
     //
     // /// Timeout a player who hasn't acted

@@ -101,6 +101,7 @@ pub fn handler(ctx: Context<StartHand>) -> Result<()> {
     hand_state.active_players = table.occupied_seats;
     hand_state.acted_this_round = 0;
     hand_state.active_count = table.current_players;
+    hand_state.all_in_players = 0; // No one is all-in at start
     hand_state.last_action_slot = clock.slot;
     hand_state.hand_start_slot = clock.slot;
     hand_state.bump = ctx.bumps.hand_state;

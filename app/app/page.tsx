@@ -49,13 +49,28 @@ export default function Home() {
   const currentPlayer = gameState.players.find(
     (p) => p.player === publicKey?.toString()
   );
+
+  // Check if all remaining players are all-in (no more betting possible)
+  const activePlayers = gameState.players.filter(
+    (p) => p.status === "playing" || p.status === "allin"
+  );
+  const playersWhoCanBet = activePlayers.filter((p) => p.status === "playing");
+  const allPlayersAllIn = activePlayers.length >= 2 && playersWhoCanBet.length === 0;
+  const onlyOneCanBet = playersWhoCanBet.length === 1;
+
+  // Player can only act if:
+  // - It's their turn
+  // - They're not all-in
+  // - Game is in betting phase
   const isPlayerTurn =
     currentPlayer &&
+    currentPlayer.status === "playing" && // Not all-in or folded
     gameState.currentPlayerSeat !== null &&
     gameState.actionOn === currentPlayer.seatIndex &&
     gameState.phase !== "Dealing" &&
     gameState.phase !== "Showdown" &&
-    gameState.phase !== "Settled";
+    gameState.phase !== "Settled" &&
+    !allPlayersAllIn;
 
   // Calculate action panel values (never negative)
   const toCall = Math.max(0, gameState.currentBet - (currentPlayer?.currentBet ?? 0));
@@ -382,6 +397,19 @@ export default function Home() {
                 smallBlind={gameState.smallBlind}
                 bigBlind={gameState.bigBlind}
               />
+            )}
+
+            {/* All-in indicator - show when all remaining players are all-in */}
+            {allPlayersAllIn && gameState.tableStatus === "Playing" &&
+             gameState.phase !== "Showdown" && gameState.phase !== "Settled" && (
+              <div className="max-w-md mx-auto bg-yellow-900/30 border border-yellow-600/50 rounded-xl p-4 text-center">
+                <p className="text-yellow-400 font-medium">
+                  All players are all-in! Cards running out...
+                </p>
+                <p className="text-gray-400 text-sm mt-1">
+                  Waiting for community cards to be revealed.
+                </p>
+              </div>
             )}
 
             {/* Action panel - only show when it's player's turn */}

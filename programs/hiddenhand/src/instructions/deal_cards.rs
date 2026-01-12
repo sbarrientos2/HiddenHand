@@ -172,6 +172,7 @@ pub fn handler(ctx: Context<DealAllCards>) -> Result<()> {
     // Advance to PreFlop
     hand_state.phase = GamePhase::PreFlop;
     hand_state.last_action_slot = clock.slot;
+    hand_state.all_in_players = 0; // No one is all-in yet
 
     msg!(
         "Cards dealt. Pot: {}. Phase: PreFlop. Action on seat {}",

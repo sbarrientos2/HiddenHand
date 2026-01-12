@@ -160,6 +160,9 @@ pub fn handler(ctx: Context<PlayerAction>, action: Action) -> Result<()> {
                 hand_state.acted_this_round = 0;
             }
 
+            // Mark player as all-in in hand state
+            hand_state.mark_all_in(player_seat.seat_index);
+
             msg!(
                 "Player at seat {} goes all-in for {} (pot: {})",
                 player_seat.seat_index,
@@ -169,24 +172,35 @@ pub fn handler(ctx: Context<PlayerAction>, action: Action) -> Result<()> {
         }
     }
 
+    // Check if player went all-in from Call/Raise (chips depleted)
+    if player_seat.chips == 0 && !hand_state.is_player_all_in(player_seat.seat_index) {
+        hand_state.mark_all_in(player_seat.seat_index);
+    }
+
     // Mark player as acted
     hand_state.mark_acted(player_seat.seat_index);
     player_seat.has_acted = true;
     hand_state.last_action_slot = clock.slot;
 
-    // Advance action to next player
-    if let Some(next_player) = hand_state.next_active_player(player_seat.seat_index, table.max_players) {
-        // Check if they can still act (not all-in)
-        // For now, simplified: just move to next
+    // Find next player who needs to act in this betting round
+    // (active, not all-in, hasn't acted yet or needs to respond to a raise)
+    if let Some(next_player) = find_next_player_who_can_act(hand_state, player_seat.seat_index, table.max_players) {
+        // Another player still needs to act - give them the action
         hand_state.action_on = next_player;
-
-        // Check if betting round is complete
-        if hand_state.is_betting_complete() {
-            advance_to_next_phase(hand_state, deck_state, table.max_players)?;
-        }
+        msg!("Action moves to seat {}", next_player);
     } else {
-        // No more players to act
-        hand_state.phase = GamePhase::Settled;
+        // No one else needs to act in this betting round
+        // Check if there's any more betting possible in the hand
+        if hand_state.can_anyone_bet() {
+            // At least 2 players can still bet - advance to next phase
+            advance_to_next_phase(hand_state, deck_state, table.max_players)?;
+        } else {
+            // No more betting possible (all remaining players are all-in,
+            // or only 1 player has chips and they've completed their action)
+            // Run out remaining community cards and go to showdown
+            msg!("No more betting possible - running out to showdown");
+            run_out_to_showdown(hand_state, deck_state)?;
+        }
     }
 
     Ok(())
@@ -245,6 +259,15 @@ fn get_first_active_left_of_dealer(hand_state: &HandState, max_players: u8) -> u
     let mut pos = (dealer + 1) % max_players;
 
     for _ in 0..max_players {
+        if hand_state.is_player_active(pos) && !hand_state.is_player_all_in(pos) {
+            return pos;
+        }
+        pos = (pos + 1) % max_players;
+    }
+
+    // Fallback: return first active player even if all-in
+    pos = (dealer + 1) % max_players;
+    for _ in 0..max_players {
         if hand_state.is_player_active(pos) {
             return pos;
         }
@@ -253,4 +276,64 @@ fn get_first_active_left_of_dealer(hand_state: &HandState, max_players: u8) -> u
 
     // Fallback (shouldn't happen with 2+ active players)
     dealer
+}
+
+/// Find next player who can actually bet (not folded or all-in)
+fn find_next_player_who_can_act(hand_state: &HandState, after_seat: u8, max_players: u8) -> Option<u8> {
+    let mut next = (after_seat + 1) % max_players;
+    for _ in 0..max_players {
+        if hand_state.is_player_active(next) && !hand_state.is_player_all_in(next) {
+            return Some(next);
+        }
+        next = (next + 1) % max_players;
+    }
+    None
+}
+
+/// Run out all remaining community cards and advance to showdown
+fn run_out_to_showdown(hand_state: &mut HandState, deck_state: &DeckState) -> Result<()> {
+    // Reveal all remaining community cards
+    match hand_state.phase {
+        GamePhase::PreFlop => {
+            // Reveal flop
+            hand_state.community_cards[0] = (deck_state.cards[0] & 0xFF) as u8;
+            hand_state.community_cards[1] = (deck_state.cards[1] & 0xFF) as u8;
+            hand_state.community_cards[2] = (deck_state.cards[2] & 0xFF) as u8;
+            // Reveal turn
+            hand_state.community_cards[3] = (deck_state.cards[3] & 0xFF) as u8;
+            // Reveal river
+            hand_state.community_cards[4] = (deck_state.cards[4] & 0xFF) as u8;
+            hand_state.community_revealed = 5;
+            msg!("Running out: Flop {}, {}, {} | Turn {} | River {}",
+                hand_state.community_cards[0],
+                hand_state.community_cards[1],
+                hand_state.community_cards[2],
+                hand_state.community_cards[3],
+                hand_state.community_cards[4]);
+        }
+        GamePhase::Flop => {
+            // Reveal turn
+            hand_state.community_cards[3] = (deck_state.cards[3] & 0xFF) as u8;
+            // Reveal river
+            hand_state.community_cards[4] = (deck_state.cards[4] & 0xFF) as u8;
+            hand_state.community_revealed = 5;
+            msg!("Running out: Turn {} | River {}",
+                hand_state.community_cards[3],
+                hand_state.community_cards[4]);
+        }
+        GamePhase::Turn => {
+            // Reveal river
+            hand_state.community_cards[4] = (deck_state.cards[4] & 0xFF) as u8;
+            hand_state.community_revealed = 5;
+            msg!("Running out: River {}", hand_state.community_cards[4]);
+        }
+        GamePhase::River => {
+            // Already all revealed
+        }
+        _ => {}
+    }
+
+    hand_state.phase = GamePhase::Showdown;
+    msg!("Advancing to Showdown - all players all-in");
+    Ok(())
 }

@@ -67,6 +67,9 @@ pub struct HandState {
     /// Number of active players
     pub active_count: u8,
 
+    /// Bitmap of players who are all-in
+    pub all_in_players: u8,
+
     /// Last action slot for timeout tracking
     pub last_action_slot: u64,
 
@@ -92,6 +95,7 @@ impl HandState {
         1 +  // active_players
         1 +  // acted_this_round
         1 +  // active_count
+        1 +  // all_in_players
         8 +  // last_action_slot
         8 +  // hand_start_slot
         1;   // bump
@@ -123,11 +127,37 @@ impl HandState {
         self.current_bet = 0;
     }
 
+    /// Mark player as all-in
+    pub fn mark_all_in(&mut self, seat_index: u8) {
+        self.all_in_players |= 1 << seat_index;
+    }
+
+    /// Check if player is all-in
+    pub fn is_player_all_in(&self, seat_index: u8) -> bool {
+        self.all_in_players & (1 << seat_index) != 0
+    }
+
+    /// Get players who can still bet (active but not all-in)
+    pub fn players_who_can_bet(&self) -> u8 {
+        self.active_players & !self.all_in_players
+    }
+
+    /// Check if any player can still make a betting action
+    pub fn can_anyone_bet(&self) -> bool {
+        // At least 2 players need to be able to bet for betting to continue
+        // If only 1 or 0 players can bet, no more betting is possible
+        let can_bet = self.players_who_can_bet();
+        can_bet.count_ones() >= 2
+    }
+
     /// Check if betting round is complete
     pub fn is_betting_complete(&self) -> bool {
-        // All active players have acted and matched current bet
-        // (This is simplified - full implementation checks all-in players too)
-        self.acted_this_round & self.active_players == self.active_players
+        // Players who can bet and haven't acted yet
+        let can_bet = self.players_who_can_bet();
+        let need_to_act = can_bet & !self.acted_this_round;
+
+        // Betting is complete if all players who can bet have acted
+        need_to_act == 0
     }
 
     /// Find next active player after given seat

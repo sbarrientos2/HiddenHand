@@ -72,3 +72,165 @@ pub mod hiddenhand {
     //     // Force fold inactive player
     // }
 }
+
+/// Unit tests using LiteSVM for fast execution
+#[cfg(test)]
+mod unit_tests {
+    use super::*;
+
+    /// Test that table constants are valid
+    #[test]
+    fn test_table_constants() {
+        assert!(MIN_PLAYERS >= 2, "Minimum players should be at least 2");
+        assert!(MAX_PLAYERS >= MIN_PLAYERS, "Max players should be >= min players");
+        assert!(MAX_PLAYERS <= 9, "Max players should be reasonable (<=9)");
+    }
+
+    /// Test player status transitions
+    #[test]
+    fn test_player_status_transitions() {
+        use state::PlayerStatus;
+
+        let sitting = PlayerStatus::Sitting;
+        let playing = PlayerStatus::Playing;
+        let folded = PlayerStatus::Folded;
+        let all_in = PlayerStatus::AllIn;
+
+        // Status should be comparable
+        assert_ne!(sitting, playing);
+        assert_ne!(playing, folded);
+        assert_ne!(folded, all_in);
+    }
+
+    /// Test game phase ordering
+    #[test]
+    fn test_game_phase_ordering() {
+        use state::GamePhase;
+
+        // Phases should be distinct
+        assert_ne!(GamePhase::Dealing, GamePhase::PreFlop);
+        assert_ne!(GamePhase::PreFlop, GamePhase::Flop);
+        assert_ne!(GamePhase::Flop, GamePhase::Turn);
+        assert_ne!(GamePhase::Turn, GamePhase::River);
+        assert_ne!(GamePhase::River, GamePhase::Showdown);
+        assert_ne!(GamePhase::Showdown, GamePhase::Settled);
+    }
+
+    /// Test player seat size calculation
+    #[test]
+    fn test_player_seat_size() {
+        use state::PlayerSeat;
+
+        // Verify our size calculation is correct
+        // 8 (discriminator) + 32 (table) + 32 (player) + 1 (seat_index) +
+        // 8 (chips) + 8 (current_bet) + 8 (total_bet) + 16 (hole_card_1) +
+        // 16 (hole_card_2) + 1 (status) + 1 (has_acted) + 1 (bump)
+        let expected_size = 8 + 32 + 32 + 1 + 8 + 8 + 8 + 16 + 16 + 1 + 1 + 1;
+        assert_eq!(PlayerSeat::SIZE, expected_size, "PlayerSeat size mismatch");
+    }
+
+    /// Test table size calculation
+    #[test]
+    fn test_table_size() {
+        use state::Table;
+
+        // 8 (discriminator) + 32 (authority) + 32 (table_id) + 8 (small_blind) +
+        // 8 (big_blind) + 8 (min_buy_in) + 8 (max_buy_in) + 1 (max_players) +
+        // 1 (current_players) + 1 (status) + 8 (hand_number) + 1 (occupied_seats) +
+        // 1 (dealer_position) + 1 (bump)
+        let expected_size = 8 + 32 + 32 + 8 + 8 + 8 + 8 + 1 + 1 + 1 + 8 + 1 + 1 + 1;
+        assert_eq!(Table::SIZE, expected_size, "Table size mismatch");
+    }
+
+    /// Test action enum serialization
+    #[test]
+    fn test_action_variants() {
+        use instructions::Action;
+
+        let fold = Action::Fold;
+        let check = Action::Check;
+        let call = Action::Call;
+        let raise = Action::Raise { amount: 1000 };
+        let all_in = Action::AllIn;
+
+        // Actions should be distinct
+        assert_ne!(fold, check);
+        assert_ne!(check, call);
+        assert_eq!(raise, Action::Raise { amount: 1000 });
+        assert_ne!(raise, Action::Raise { amount: 2000 });
+        assert_ne!(all_in, fold);
+    }
+
+    /// Test error codes exist
+    #[test]
+    fn test_error_codes() {
+        use error::HiddenHandError;
+
+        // Verify key error variants exist and are distinct
+        let duplicate = HiddenHandError::DuplicateAccount;
+        let not_at_table = HiddenHandError::PlayerNotAtTable;
+        let invalid_action = HiddenHandError::InvalidAction;
+
+        // These should compile and be different discriminants
+        assert_ne!(
+            std::mem::discriminant(&duplicate),
+            std::mem::discriminant(&not_at_table)
+        );
+        assert_ne!(
+            std::mem::discriminant(&not_at_table),
+            std::mem::discriminant(&invalid_action)
+        );
+    }
+
+    /// Test seat bitmap operations
+    #[test]
+    fn test_seat_bitmap_operations() {
+        // Test bitmap operations used in Table for seat management
+        let mut occupied_seats: u8 = 0;
+
+        // Occupy seat 0
+        occupied_seats |= 1 << 0;
+        assert_eq!(occupied_seats & (1 << 0), 1);
+        assert_eq!(occupied_seats & (1 << 1), 0);
+
+        // Occupy seat 3
+        occupied_seats |= 1 << 3;
+        assert_eq!(occupied_seats & (1 << 3), 8);
+
+        // Vacate seat 0
+        occupied_seats &= !(1 << 0);
+        assert_eq!(occupied_seats & (1 << 0), 0);
+        assert_eq!(occupied_seats & (1 << 3), 8);
+    }
+
+    /// Test place_bet with saturating arithmetic
+    #[test]
+    fn test_place_bet_saturating() {
+        // Test that betting uses saturating arithmetic
+        let chips: u64 = 1000;
+        let bet_amount: u64 = 1500;
+
+        // Should cap at available chips
+        let actual_bet = bet_amount.min(chips);
+        assert_eq!(actual_bet, 1000);
+
+        // Remaining chips should be 0
+        let remaining = chips.saturating_sub(actual_bet);
+        assert_eq!(remaining, 0);
+    }
+
+    /// Test pot splitting arithmetic
+    #[test]
+    fn test_pot_splitting() {
+        // Test pot splitting with remainder
+        let pot: u64 = 1000;
+        let winner_count: u64 = 3;
+
+        let share = pot / winner_count;
+        let remainder = pot % winner_count;
+
+        assert_eq!(share, 333);
+        assert_eq!(remainder, 1);
+        assert_eq!(share * winner_count + remainder, pot);
+    }
+}

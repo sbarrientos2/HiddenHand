@@ -27,14 +27,13 @@ pub struct JoinTable<'info> {
     )]
     pub player_seat: Account<'info, PlayerSeat>,
 
-    /// Vault to receive buy-in
+    /// Vault to receive buy-in (SystemAccount validates System Program ownership)
     #[account(
         mut,
         seeds = [VAULT_SEED, table.key().as_ref()],
         bump
     )]
-    /// CHECK: PDA vault validated by seeds
-    pub vault: UncheckedAccount<'info>,
+    pub vault: SystemAccount<'info>,
 
     pub system_program: Program<'info, System>,
 }

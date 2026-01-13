@@ -43,7 +43,7 @@ pub struct PlayerAction<'info> {
         mut,
         seeds = [SEAT_SEED, table.key().as_ref(), &[player_seat.seat_index]],
         bump = player_seat.bump,
-        constraint = player_seat.player == player.key() @ HiddenHandError::PlayerNotAtTable
+        has_one = player @ HiddenHandError::PlayerNotAtTable
     )]
     pub player_seat: Account<'info, PlayerSeat>,
 }

@@ -145,86 +145,114 @@ export default function Home() {
   }));
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-gray-900 via-gray-800 to-gray-900">
+    <main className="min-h-screen relative">
       {/* Header */}
-      <header className="p-4 flex justify-between items-center border-b border-gray-700">
+      <header className="glass-dark sticky top-0 z-50 px-6 py-4 flex justify-between items-center border-b border-white/5">
         <div className="flex items-center gap-4">
-          <h1 className="text-2xl font-bold text-white">
-            Hidden<span className="text-green-500">Hand</span>
+          <h1 className="font-display text-2xl font-bold tracking-wide">
+            <span className="text-[var(--text-primary)]">Hidden</span>
+            <span className="text-gold-gradient">Hand</span>
           </h1>
           <span
-            className={`text-xs px-2 py-1 rounded-full ${
-              NETWORK === "localnet"
-                ? "bg-purple-600 text-white"
-                : "bg-yellow-600 text-white"
-            }`}
+            className={`
+              text-[10px] px-2.5 py-1 rounded-full uppercase tracking-wider font-semibold
+              ${NETWORK === "localnet"
+                ? "bg-purple-500/20 text-purple-400 border border-purple-500/30"
+                : "bg-[var(--gold-main)]/20 text-[var(--gold-light)] border border-[var(--gold-main)]/30"
+              }
+            `}
           >
-            {NETWORK.toUpperCase()}
+            {NETWORK}
           </span>
         </div>
 
-        <div className="flex items-center gap-4">
-          <WalletButton className="!bg-green-600 hover:!bg-green-500" />
-        </div>
+        <WalletButton className="btn-gold !text-sm !px-5 !py-2.5 !rounded-xl" />
       </header>
 
       {/* Main content */}
-      <div className="container mx-auto px-4 py-8">
+      <div className="container mx-auto px-4 py-8 pb-32">
         {!connected ? (
-          <div className="text-center py-20">
-            <h2 className="text-4xl font-bold text-white mb-4">
-              Privacy Poker on Solana
-            </h2>
-            <p className="text-xl text-gray-400 mb-8 max-w-2xl mx-auto">
-              The only poker game where the house can&apos;t see your cards.
-              Connect your wallet to start playing.
-            </p>
-            <WalletButton className="!bg-green-600 hover:!bg-green-500 !text-lg !px-8 !py-4" />
+          /* Landing Page */
+          <div className="text-center py-16">
+            {/* Hero */}
+            <div className="max-w-3xl mx-auto mb-16">
+              <h2 className="font-display text-5xl md:text-6xl font-bold text-[var(--text-primary)] mb-6 leading-tight">
+                Privacy Poker
+                <br />
+                <span className="text-gold-gradient">on Solana</span>
+              </h2>
+              <p className="text-xl text-[var(--text-secondary)] mb-10 leading-relaxed">
+                The only poker game where the house can&apos;t see your cards.
+                <br />
+                Encrypted. On-chain. Provably fair.
+              </p>
+              <WalletButton className="btn-gold !text-lg !px-10 !py-4 !rounded-xl !font-bold" />
+            </div>
 
             {/* Features */}
-            <div className="grid md:grid-cols-3 gap-8 mt-16 max-w-4xl mx-auto">
-              <div className="bg-gray-800/50 p-6 rounded-xl">
-                <div className="text-3xl mb-4">🔒</div>
-                <h3 className="text-lg font-bold text-white mb-2">
-                  Encrypted Cards
-                </h3>
-                <p className="text-gray-400 text-sm">
-                  Your hole cards are encrypted. Only you can see them.
-                </p>
-              </div>
-              <div className="bg-gray-800/50 p-6 rounded-xl">
-                <div className="text-3xl mb-4">⛓️</div>
-                <h3 className="text-lg font-bold text-white mb-2">
-                  Fully On-Chain
-                </h3>
-                <p className="text-gray-400 text-sm">
-                  Every action is recorded on Solana. Provably fair.
-                </p>
-              </div>
-              <div className="bg-gray-800/50 p-6 rounded-xl">
-                <div className="text-3xl mb-4">🎰</div>
-                <h3 className="text-lg font-bold text-white mb-2">
-                  Texas Hold&apos;em
-                </h3>
-                <p className="text-gray-400 text-sm">
-                  Classic 6-max poker with blinds and all-in action.
-                </p>
-              </div>
+            <div className="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto">
+              {[
+                {
+                  icon: (
+                    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
+                  ),
+                  title: "Encrypted Cards",
+                  desc: "Your hole cards are encrypted. Only you can see them.",
+                },
+                {
+                  icon: (
+                    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+                    </svg>
+                  ),
+                  title: "Fully On-Chain",
+                  desc: "Every action is recorded on Solana. Provably fair.",
+                },
+                {
+                  icon: (
+                    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                    </svg>
+                  ),
+                  title: "Texas Hold'em",
+                  desc: "Classic 6-max poker with blinds and all-in action.",
+                },
+              ].map((feature, idx) => (
+                <div
+                  key={idx}
+                  className="glass p-6 rounded-2xl hover:border-[var(--gold-main)]/30 transition-all group"
+                >
+                  <div className="w-14 h-14 rounded-xl bg-[var(--felt-dark)] flex items-center justify-center text-[var(--gold-main)] mb-4 mx-auto group-hover:scale-110 transition-transform">
+                    {feature.icon}
+                  </div>
+                  <h3 className="font-display text-lg font-bold text-[var(--text-primary)] mb-2">
+                    {feature.title}
+                  </h3>
+                  <p className="text-[var(--text-secondary)] text-sm">
+                    {feature.desc}
+                  </p>
+                </div>
+              ))}
             </div>
           </div>
         ) : (
+          /* Game Interface */
           <div className="space-y-6">
             {/* Table Controls */}
-            <div className="bg-gray-800/50 rounded-xl p-4">
+            <div className="glass rounded-2xl p-5">
               <div className="flex flex-wrap items-center gap-4">
                 {/* Table ID input */}
-                <div className="flex items-center gap-2">
-                  <label className="text-gray-400 text-sm">Table:</label>
+                <div className="flex items-center gap-3">
+                  <label className="text-[var(--text-muted)] text-sm uppercase tracking-wider">
+                    Table
+                  </label>
                   <input
                     type="text"
                     value={tableIdInput}
                     onChange={(e) => setTableIdInput(e.target.value)}
-                    className="bg-gray-700 text-white px-3 py-2 rounded-lg text-sm w-40"
+                    className="bg-[var(--bg-dark)] text-[var(--text-primary)] px-4 py-2.5 rounded-xl text-sm w-44 border border-white/5 focus:border-[var(--gold-main)] transition-colors"
                     placeholder="Table name"
                   />
                 </div>
@@ -234,35 +262,37 @@ export default function Home() {
                   <button
                     onClick={() => setShowCreateModal(true)}
                     disabled={loading || !tableIdInput}
-                    className="bg-green-600 hover:bg-green-500 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm font-medium"
+                    className="btn-success px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50"
                   >
                     Create Table
                   </button>
                 ) : (
                   <>
                     {/* Table status */}
-                    <div className="text-sm">
-                      <span className="text-gray-400">Status: </span>
-                      <span
-                        className={
-                          gameState.tableStatus === "Playing"
-                            ? "text-green-400"
-                            : gameState.tableStatus === "Waiting"
-                            ? "text-yellow-400"
-                            : "text-red-400"
-                        }
-                      >
-                        {gameState.tableStatus}
-                      </span>
-                      <span className="text-gray-500 ml-2">
-                        ({gameState.players.filter((p) => p.status !== "empty").length}/
-                        {gameState.table.maxPlayers} players)
+                    <div className="glass-dark px-4 py-2 rounded-xl text-sm flex items-center gap-3">
+                      <div className="flex items-center gap-2">
+                        <div
+                          className={`w-2 h-2 rounded-full ${
+                            gameState.tableStatus === "Playing"
+                              ? "bg-[var(--status-active)]"
+                              : gameState.tableStatus === "Waiting"
+                              ? "bg-[var(--status-warning)]"
+                              : "bg-[var(--status-danger)]"
+                          }`}
+                        />
+                        <span className="text-[var(--text-secondary)]">
+                          {gameState.tableStatus}
+                        </span>
+                      </div>
+                      <span className="text-[var(--text-muted)]">
+                        {gameState.players.filter((p) => p.status !== "empty").length}/
+                        {gameState.table.maxPlayers} players
                       </span>
                     </div>
 
                     {/* Join if not at table */}
                     {!currentPlayer && gameState.tableStatus === "Waiting" && (
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-3">
                         <select
                           value={selectedSeat ?? ""}
                           onChange={(e) =>
@@ -270,7 +300,7 @@ export default function Home() {
                               e.target.value ? Number(e.target.value) : null
                             )
                           }
-                          className="bg-gray-700 text-white px-3 py-2 rounded-lg text-sm"
+                          className="bg-[var(--bg-dark)] text-[var(--text-primary)] px-4 py-2.5 rounded-xl text-sm border border-white/5"
                         >
                           <option value="">Select seat</option>
                           {gameState.players
@@ -281,42 +311,47 @@ export default function Home() {
                               </option>
                             ))}
                         </select>
-                        <input
-                          type="number"
-                          value={buyInSol}
-                          onChange={(e) => setBuyInSol(Number(e.target.value))}
-                          min={lamportsToSol(gameState.table.minBuyIn.toNumber())}
-                          max={lamportsToSol(gameState.table.maxBuyIn.toNumber())}
-                          step={0.1}
-                          className="bg-gray-700 text-white px-3 py-2 rounded-lg text-sm w-24"
-                        />
-                        <span className="text-gray-400 text-sm">SOL</span>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            value={buyInSol}
+                            onChange={(e) => setBuyInSol(Number(e.target.value))}
+                            min={lamportsToSol(gameState.table.minBuyIn.toNumber())}
+                            max={lamportsToSol(gameState.table.maxBuyIn.toNumber())}
+                            step={0.1}
+                            className="bg-[var(--bg-dark)] text-[var(--text-primary)] px-4 py-2.5 rounded-xl text-sm w-24 border border-white/5"
+                          />
+                          <span className="text-[var(--text-muted)] text-sm">SOL</span>
+                        </div>
                         <button
                           onClick={handleJoinTable}
                           disabled={loading || selectedSeat === null}
-                          className="bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm font-medium"
+                          className="btn-info px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50"
                         >
                           Join
                         </button>
                       </div>
                     )}
 
-                    {/* Leave table - show when waiting OR when player has no chips */}
+                    {/* Leave table */}
                     {currentPlayer && (gameState.tableStatus === "Waiting" || currentPlayer.chips === 0) && (
                       <button
                         onClick={() => leaveTable()}
                         disabled={loading}
-                        className="bg-red-600 hover:bg-red-500 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm font-medium"
+                        className="btn-danger px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50"
                       >
                         Leave Table
                       </button>
                     )}
 
-                    {/* Rebuy message for players with 0 chips */}
+                    {/* Rebuy message */}
                     {currentPlayer && currentPlayer.chips === 0 && (
-                      <div className="flex items-center gap-2 bg-orange-900/30 border border-orange-600/50 rounded-lg px-3 py-2">
-                        <span className="text-orange-400 text-sm">No chips!</span>
-                        <span className="text-gray-400 text-sm">Leave and rejoin to rebuy.</span>
+                      <div className="glass-dark border border-[var(--status-warning)]/30 rounded-xl px-4 py-2 flex items-center gap-2">
+                        <svg className="w-4 h-4 text-[var(--status-warning)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                        <span className="text-[var(--status-warning)] text-sm">No chips!</span>
+                        <span className="text-[var(--text-muted)] text-sm">Leave and rejoin to rebuy.</span>
                       </div>
                     )}
                   </>
@@ -324,26 +359,31 @@ export default function Home() {
 
                 {/* Error display */}
                 {error && (
-                  <div className="text-red-400 text-sm ml-auto">{error}</div>
+                  <div className="ml-auto glass-dark border border-[var(--status-danger)]/30 rounded-xl px-4 py-2">
+                    <span className="text-[var(--status-danger)] text-sm">{error}</span>
+                  </div>
                 )}
 
                 {/* Loading indicator */}
                 {loading && (
-                  <div className="text-gray-400 text-sm ml-auto flex items-center gap-2">
-                    <div className="animate-spin h-4 w-4 border-2 border-gray-400 border-t-transparent rounded-full" />
+                  <div className="ml-auto flex items-center gap-2 text-[var(--text-muted)] text-sm">
+                    <div className="animate-spin h-4 w-4 border-2 border-[var(--gold-main)]/30 border-t-[var(--gold-main)] rounded-full" />
                     Processing...
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Authority Controls (Start Hand, Deal, Showdown) */}
+            {/* Authority Controls */}
             {gameState.isAuthority && gameState.table && (
-              <div className="bg-yellow-900/30 border border-yellow-600/50 rounded-xl p-4">
+              <div className="glass border border-[var(--gold-main)]/20 rounded-2xl p-5">
                 <div className="flex items-center gap-4 flex-wrap">
-                  <span className="text-yellow-400 text-sm font-medium">
-                    Table Authority Controls:
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-[var(--gold-main)]" />
+                    <span className="text-[var(--gold-main)] text-sm font-medium uppercase tracking-wider">
+                      Authority Controls
+                    </span>
+                  </div>
 
                   {/* Count players with chips */}
                   {(() => {
@@ -357,36 +397,36 @@ export default function Home() {
 
                     return (
                       <>
-                        {/* Start Hand - when waiting with 2+ players WITH chips */}
+                        {/* Start Hand */}
                         {gameState.tableStatus === "Waiting" && totalPlayers >= 2 && (
                           canStart ? (
                             <button
                               onClick={() => startHand()}
                               disabled={loading}
-                              className="bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm font-medium"
+                              className="btn-gold px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50"
                             >
                               Start Hand
                             </button>
                           ) : (
-                            <span className="text-orange-400 text-sm">
+                            <span className="text-[var(--status-warning)] text-sm">
                               Need 2+ players with chips ({playersWithChips}/{totalPlayers} have chips)
                             </span>
                           )
                         )}
 
-                        {/* Deal Cards - when in Dealing phase AND 2+ players have chips */}
+                        {/* Deal Cards */}
                         {gameState.phase === "Dealing" && (
                           canStart ? (
                             <button
                               onClick={() => dealCards()}
                               disabled={loading}
-                              className="bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm font-medium"
+                              className="btn-gold px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50"
                             >
                               Deal Cards
                             </button>
                           ) : (
-                            <span className="text-orange-400 text-sm">
-                              Cannot deal - need 2+ players with chips ({playersWithChips}/{totalPlayers} have chips)
+                            <span className="text-[var(--status-warning)] text-sm">
+                              Cannot deal - need 2+ players with chips
                             </span>
                           )
                         )}
@@ -394,22 +434,22 @@ export default function Home() {
                     );
                   })()}
 
-                  {/* Showdown - when in Showdown phase OR when pot needs to be awarded */}
+                  {/* Showdown */}
                   {(gameState.phase === "Showdown" ||
                     (gameState.phase === "Settled" && gameState.pot > 0)) && (
                     <button
                       onClick={() => showdown()}
                       disabled={loading}
-                      className="bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm font-medium"
+                      className="btn-gold px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50"
                     >
-                      {gameState.phase === "Showdown" ? "Run Showdown" : "Award Pot to Winner"}
+                      {gameState.phase === "Showdown" ? "Run Showdown" : "Award Pot"}
                     </button>
                   )}
 
                   {/* Phase indicator */}
                   {gameState.tableStatus === "Playing" && (
-                    <span className="text-gray-400 text-sm ml-auto">
-                      Phase: <span className="text-white">{gameState.phase}</span>
+                    <span className="ml-auto text-[var(--text-muted)] text-sm">
+                      Phase: <span className="text-[var(--text-primary)] font-medium">{gameState.phase}</span>
                     </span>
                   )}
                 </div>
@@ -433,22 +473,25 @@ export default function Home() {
               />
             )}
 
-            {/* All-in indicator - show when all remaining players are all-in */}
+            {/* All-in indicator */}
             {allPlayersAllIn && gameState.tableStatus === "Playing" &&
              gameState.phase !== "Showdown" && gameState.phase !== "Settled" && (
-              <div className="max-w-md mx-auto bg-yellow-900/30 border border-yellow-600/50 rounded-xl p-4 text-center">
-                <p className="text-yellow-400 font-medium">
-                  All players are all-in! Cards running out...
-                </p>
-                <p className="text-gray-400 text-sm mt-1">
-                  Waiting for community cards to be revealed.
+              <div className="max-w-md mx-auto glass border border-[var(--gold-main)]/30 rounded-2xl p-5 text-center">
+                <div className="flex items-center justify-center gap-2 mb-2">
+                  <div className="w-2 h-2 rounded-full bg-[var(--gold-main)] animate-pulse" />
+                  <span className="text-[var(--gold-light)] font-semibold">
+                    All players are all-in!
+                  </span>
+                </div>
+                <p className="text-[var(--text-muted)] text-sm">
+                  Cards running out automatically...
                 </p>
               </div>
             )}
 
-            {/* Action panel - only show when it's player's turn */}
+            {/* Action panel */}
             {currentPlayer && gameState.tableStatus === "Playing" && (
-              <div className="max-w-md mx-auto">
+              <div className="max-w-lg mx-auto">
                 <ActionPanel
                   isPlayerTurn={isPlayerTurn ?? false}
                   canCheck={canCheck}
@@ -468,15 +511,19 @@ export default function Home() {
             {/* No table message */}
             {!gameState.table && tableIdInput && (
               <div className="text-center py-20">
-                <p className="text-gray-400 text-lg mb-4">
-                  Table &quot;{tableIdInput}&quot; doesn&apos;t exist yet.
-                </p>
-                <button
-                  onClick={() => setShowCreateModal(true)}
-                  className="bg-green-600 hover:bg-green-500 text-white px-6 py-3 rounded-lg font-medium"
-                >
-                  Create This Table
-                </button>
+                <div className="glass inline-block px-8 py-6 rounded-2xl mb-6">
+                  <p className="text-[var(--text-secondary)] text-lg">
+                    Table <span className="text-[var(--text-primary)] font-medium">&quot;{tableIdInput}&quot;</span> doesn&apos;t exist yet.
+                  </p>
+                </div>
+                <div>
+                  <button
+                    onClick={() => setShowCreateModal(true)}
+                    className="btn-gold px-8 py-4 rounded-xl font-semibold"
+                  >
+                    Create This Table
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -485,157 +532,181 @@ export default function Home() {
 
       {/* Create Table Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-xl p-6 max-w-md w-full mx-4">
-            <h2 className="text-xl font-bold text-white mb-4">Create Table</h2>
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="glass rounded-3xl p-8 max-w-md w-full relative overflow-hidden">
+            {/* Modal glow */}
+            <div
+              className="absolute inset-0 pointer-events-none"
+              style={{
+                background: "radial-gradient(ellipse at top, rgba(212, 160, 18, 0.1) 0%, transparent 50%)",
+              }}
+            />
 
-            <div className="space-y-4">
-              <div>
-                <label className="block text-gray-400 text-sm mb-1">
-                  Table Name
-                </label>
-                <input
-                  type="text"
-                  value={tableIdInput}
-                  onChange={(e) => setTableIdInput(e.target.value)}
-                  className="w-full bg-gray-700 text-white px-3 py-2 rounded-lg"
-                />
+            <div className="relative">
+              <h2 className="font-display text-2xl font-bold text-[var(--text-primary)] mb-6">
+                Create Table
+              </h2>
+
+              <div className="space-y-5">
+                <div>
+                  <label className="block text-[var(--text-muted)] text-sm uppercase tracking-wider mb-2">
+                    Table Name
+                  </label>
+                  <input
+                    type="text"
+                    value={tableIdInput}
+                    onChange={(e) => setTableIdInput(e.target.value)}
+                    className="w-full bg-[var(--bg-dark)] text-[var(--text-primary)] px-4 py-3 rounded-xl border border-white/5 focus:border-[var(--gold-main)] transition-colors"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[var(--text-muted)] text-sm uppercase tracking-wider mb-2">
+                      Small Blind
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        value={createConfig.smallBlind}
+                        onChange={(e) =>
+                          setCreateConfig({
+                            ...createConfig,
+                            smallBlind: Number(e.target.value),
+                          })
+                        }
+                        step={0.001}
+                        min={0.001}
+                        className="w-full bg-[var(--bg-dark)] text-[var(--text-primary)] px-4 py-3 rounded-xl border border-white/5 focus:border-[var(--gold-main)] transition-colors"
+                      />
+                      <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)] text-sm">SOL</span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[var(--text-muted)] text-sm uppercase tracking-wider mb-2">
+                      Big Blind
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        value={createConfig.bigBlind}
+                        onChange={(e) =>
+                          setCreateConfig({
+                            ...createConfig,
+                            bigBlind: Number(e.target.value),
+                          })
+                        }
+                        step={0.001}
+                        min={0.001}
+                        className="w-full bg-[var(--bg-dark)] text-[var(--text-primary)] px-4 py-3 rounded-xl border border-white/5 focus:border-[var(--gold-main)] transition-colors"
+                      />
+                      <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)] text-sm">SOL</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[var(--text-muted)] text-sm uppercase tracking-wider mb-2">
+                      Min Buy-in
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        value={createConfig.minBuyIn}
+                        onChange={(e) =>
+                          setCreateConfig({
+                            ...createConfig,
+                            minBuyIn: Number(e.target.value),
+                          })
+                        }
+                        step={0.1}
+                        min={0.1}
+                        className="w-full bg-[var(--bg-dark)] text-[var(--text-primary)] px-4 py-3 rounded-xl border border-white/5 focus:border-[var(--gold-main)] transition-colors"
+                      />
+                      <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)] text-sm">SOL</span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[var(--text-muted)] text-sm uppercase tracking-wider mb-2">
+                      Max Buy-in
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        value={createConfig.maxBuyIn}
+                        onChange={(e) =>
+                          setCreateConfig({
+                            ...createConfig,
+                            maxBuyIn: Number(e.target.value),
+                          })
+                        }
+                        step={0.1}
+                        min={0.1}
+                        className="w-full bg-[var(--bg-dark)] text-[var(--text-primary)] px-4 py-3 rounded-xl border border-white/5 focus:border-[var(--gold-main)] transition-colors"
+                      />
+                      <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)] text-sm">SOL</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[var(--text-muted)] text-sm uppercase tracking-wider mb-2">
+                    Max Players
+                  </label>
+                  <select
+                    value={createConfig.maxPlayers}
+                    onChange={(e) =>
+                      setCreateConfig({
+                        ...createConfig,
+                        maxPlayers: Number(e.target.value),
+                      })
+                    }
+                    className="w-full bg-[var(--bg-dark)] text-[var(--text-primary)] px-4 py-3 rounded-xl border border-white/5 focus:border-[var(--gold-main)] transition-colors"
+                  >
+                    <option value={2}>2 Players (Heads-up)</option>
+                    <option value={4}>4 Players</option>
+                    <option value={6}>6 Players (6-max)</option>
+                  </select>
+                </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-gray-400 text-sm mb-1">
-                    Small Blind (SOL)
-                  </label>
-                  <input
-                    type="number"
-                    value={createConfig.smallBlind}
-                    onChange={(e) =>
-                      setCreateConfig({
-                        ...createConfig,
-                        smallBlind: Number(e.target.value),
-                      })
-                    }
-                    step={0.001}
-                    min={0.001}
-                    className="w-full bg-gray-700 text-white px-3 py-2 rounded-lg"
-                  />
-                </div>
-                <div>
-                  <label className="block text-gray-400 text-sm mb-1">
-                    Big Blind (SOL)
-                  </label>
-                  <input
-                    type="number"
-                    value={createConfig.bigBlind}
-                    onChange={(e) =>
-                      setCreateConfig({
-                        ...createConfig,
-                        bigBlind: Number(e.target.value),
-                      })
-                    }
-                    step={0.001}
-                    min={0.001}
-                    className="w-full bg-gray-700 text-white px-3 py-2 rounded-lg"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-gray-400 text-sm mb-1">
-                    Min Buy-in (SOL)
-                  </label>
-                  <input
-                    type="number"
-                    value={createConfig.minBuyIn}
-                    onChange={(e) =>
-                      setCreateConfig({
-                        ...createConfig,
-                        minBuyIn: Number(e.target.value),
-                      })
-                    }
-                    step={0.1}
-                    min={0.1}
-                    className="w-full bg-gray-700 text-white px-3 py-2 rounded-lg"
-                  />
-                </div>
-                <div>
-                  <label className="block text-gray-400 text-sm mb-1">
-                    Max Buy-in (SOL)
-                  </label>
-                  <input
-                    type="number"
-                    value={createConfig.maxBuyIn}
-                    onChange={(e) =>
-                      setCreateConfig({
-                        ...createConfig,
-                        maxBuyIn: Number(e.target.value),
-                      })
-                    }
-                    step={0.1}
-                    min={0.1}
-                    className="w-full bg-gray-700 text-white px-3 py-2 rounded-lg"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-gray-400 text-sm mb-1">
-                  Max Players
-                </label>
-                <select
-                  value={createConfig.maxPlayers}
-                  onChange={(e) =>
-                    setCreateConfig({
-                      ...createConfig,
-                      maxPlayers: Number(e.target.value),
-                    })
-                  }
-                  className="w-full bg-gray-700 text-white px-3 py-2 rounded-lg"
+              <div className="flex gap-4 mt-8">
+                <button
+                  onClick={() => setShowCreateModal(false)}
+                  className="flex-1 btn-action py-3 rounded-xl font-semibold"
                 >
-                  <option value={2}>2 Players (Heads-up)</option>
-                  <option value={4}>4 Players</option>
-                  <option value={6}>6 Players (6-max)</option>
-                </select>
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCreateTable}
+                  disabled={loading || !tableIdInput}
+                  className="flex-1 btn-gold py-3 rounded-xl font-semibold disabled:opacity-50"
+                >
+                  {loading ? "Creating..." : "Create Table"}
+                </button>
               </div>
-            </div>
-
-            <div className="flex gap-4 mt-6">
-              <button
-                onClick={() => setShowCreateModal(false)}
-                className="flex-1 bg-gray-600 hover:bg-gray-500 text-white px-4 py-2 rounded-lg font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleCreateTable}
-                disabled={loading || !tableIdInput}
-                className="flex-1 bg-green-600 hover:bg-green-500 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg font-medium"
-              >
-                {loading ? "Creating..." : "Create"}
-              </button>
             </div>
           </div>
         </div>
       )}
 
       {/* Footer */}
-      <footer className="absolute bottom-0 w-full p-4 text-center text-gray-500 text-sm border-t border-gray-800">
-        <p>
+      <footer className="fixed bottom-0 w-full glass-dark py-4 text-center border-t border-white/5">
+        <p className="text-[var(--text-muted)] text-sm">
           Built for{" "}
           <a
             href="https://solana.com/privacyhack"
-            className="text-green-500 hover:underline"
+            className="text-[var(--felt-highlight)] hover:text-[var(--felt-light)] transition-colors"
             target="_blank"
             rel="noopener noreferrer"
           >
             Solana Privacy Hack
-          </a>{" "}
-          with{" "}
+          </a>
+          {" "}with{" "}
           <a
             href="https://inco.org"
-            className="text-blue-400 hover:underline"
+            className="text-[var(--status-info)] hover:text-blue-300 transition-colors"
             target="_blank"
             rel="noopener noreferrer"
           >

@@ -1,6 +1,6 @@
 "use client";
 
-import { FC, useState } from "react";
+import { FC, useState, useEffect } from "react";
 
 interface ActionPanelProps {
   isPlayerTurn: boolean;
@@ -29,34 +29,74 @@ export const ActionPanel: FC<ActionPanelProps> = ({
   onAllIn,
   isLoading = false,
 }) => {
-  const [raiseAmount, setRaiseAmount] = useState(minRaise);
+  const minRaiseTotal = toCall + minRaise;
+  const [raiseAmount, setRaiseAmount] = useState(minRaiseTotal);
+
+  // Update raise amount when minRaise changes
+  useEffect(() => {
+    setRaiseAmount(Math.max(minRaiseTotal, raiseAmount));
+  }, [minRaiseTotal]);
 
   if (!isPlayerTurn) {
     return (
-      <div className="bg-gray-800 rounded-xl p-4 text-center">
-        <p className="text-gray-400">Waiting for other players...</p>
+      <div className="glass rounded-2xl p-6 text-center">
+        <div className="flex items-center justify-center gap-3">
+          <div className="flex gap-1">
+            <div
+              className="w-2 h-2 rounded-full bg-[var(--gold-main)] animate-bounce"
+              style={{ animationDelay: "0ms" }}
+            />
+            <div
+              className="w-2 h-2 rounded-full bg-[var(--gold-main)] animate-bounce"
+              style={{ animationDelay: "150ms" }}
+            />
+            <div
+              className="w-2 h-2 rounded-full bg-[var(--gold-main)] animate-bounce"
+              style={{ animationDelay: "300ms" }}
+            />
+          </div>
+          <p className="text-[var(--text-secondary)]">Waiting for other players</p>
+        </div>
       </div>
     );
   }
 
-  const minRaiseTotal = toCall + minRaise;
   const canRaise = playerChips > toCall;
+  const raisePercentage = ((raiseAmount - minRaiseTotal) / (playerChips - minRaiseTotal)) * 100;
 
   return (
-    <div className="bg-gray-800 rounded-xl p-4">
-      <div className="flex flex-col gap-4">
-        {/* Info row */}
-        <div className="flex justify-between text-sm">
-          <span className="text-gray-400">To call:</span>
-          <span className="text-white font-bold">{(toCall / 1e9).toFixed(2)} SOL</span>
+    <div className="glass rounded-2xl p-5 relative overflow-hidden">
+      {/* Subtle glow when it's player's turn */}
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          background: "radial-gradient(ellipse at top, rgba(212, 160, 18, 0.1) 0%, transparent 50%)",
+        }}
+      />
+
+      <div className="relative flex flex-col gap-5">
+        {/* Header with call info */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-[var(--status-active)] animate-pulse" />
+            <span className="text-[var(--status-active)] text-sm font-medium uppercase tracking-wider">
+              Your Turn
+            </span>
+          </div>
+          <div className="glass-dark px-4 py-2 rounded-lg">
+            <span className="text-[var(--text-muted)] text-sm">To call: </span>
+            <span className="text-[var(--text-primary)] font-display font-bold">
+              {(toCall / 1e9).toFixed(2)} SOL
+            </span>
+          </div>
         </div>
 
-        {/* Action buttons */}
-        <div className="flex gap-2">
+        {/* Main action buttons */}
+        <div className="grid grid-cols-3 gap-3">
           <button
             onClick={onFold}
             disabled={isLoading}
-            className="flex-1 bg-red-600 hover:bg-red-500 disabled:bg-gray-600 text-white font-bold py-3 px-4 rounded-lg transition-colors"
+            className="btn-danger py-4 rounded-xl font-bold uppercase tracking-wide disabled:opacity-50 disabled:cursor-not-allowed transition-all"
           >
             Fold
           </button>
@@ -65,7 +105,7 @@ export const ActionPanel: FC<ActionPanelProps> = ({
             <button
               onClick={onCheck}
               disabled={isLoading}
-              className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 text-white font-bold py-3 px-4 rounded-lg transition-colors"
+              className="btn-info py-4 rounded-xl font-bold uppercase tracking-wide disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             >
               Check
             </button>
@@ -73,16 +113,17 @@ export const ActionPanel: FC<ActionPanelProps> = ({
             <button
               onClick={onCall}
               disabled={isLoading || playerChips < toCall}
-              className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 text-white font-bold py-3 px-4 rounded-lg transition-colors"
+              className="btn-info py-4 rounded-xl font-bold uppercase tracking-wide disabled:opacity-50 disabled:cursor-not-allowed transition-all flex flex-col items-center gap-0.5"
             >
-              Call {(toCall / 1e9).toFixed(2)}
+              <span>Call</span>
+              <span className="text-xs opacity-80">{(toCall / 1e9).toFixed(2)}</span>
             </button>
           )}
 
           <button
             onClick={onAllIn}
             disabled={isLoading}
-            className="flex-1 bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-600 text-white font-bold py-3 px-4 rounded-lg transition-colors"
+            className="btn-gold py-4 rounded-xl font-bold uppercase tracking-wide disabled:opacity-50 disabled:cursor-not-allowed transition-all animate-pulse-gold"
           >
             All In
           </button>
@@ -90,53 +131,74 @@ export const ActionPanel: FC<ActionPanelProps> = ({
 
         {/* Raise controls */}
         {canRaise && (
-          <div className="space-y-2">
-            <div className="flex items-center gap-4">
+          <div className="space-y-4 pt-2 border-t border-white/5">
+            {/* Raise header */}
+            <div className="flex items-center justify-between">
+              <span className="text-[var(--text-secondary)] text-sm uppercase tracking-wider">
+                Raise Amount
+              </span>
+              <div className="glass-dark px-3 py-1.5 rounded-lg">
+                <span className="font-display font-bold text-[var(--gold-light)]">
+                  {(raiseAmount / 1e9).toFixed(2)}
+                </span>
+                <span className="text-[var(--text-muted)] text-sm ml-1">SOL</span>
+              </div>
+            </div>
+
+            {/* Custom slider with visual track */}
+            <div className="relative py-2">
+              {/* Track background */}
+              <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-2 bg-[var(--bg-dark)] rounded-full border border-white/5" />
+
+              {/* Filled track */}
+              <div
+                className="absolute top-1/2 -translate-y-1/2 left-0 h-2 rounded-full"
+                style={{
+                  width: `${Math.max(0, Math.min(100, raisePercentage))}%`,
+                  background: "linear-gradient(90deg, var(--gold-dark) 0%, var(--gold-main) 50%, var(--gold-light) 100%)",
+                }}
+              />
+
+              {/* Input range */}
               <input
                 type="range"
                 min={minRaiseTotal}
                 max={playerChips}
                 value={raiseAmount}
                 onChange={(e) => setRaiseAmount(Number(e.target.value))}
-                className="flex-1 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-green-500"
+                className="relative z-10 w-full"
               />
-              <span className="text-white font-bold w-24 text-right">
-                {(raiseAmount / 1e9).toFixed(2)} SOL
-              </span>
             </div>
 
-            {/* Quick raise buttons */}
-            <div className="flex gap-2">
-              <button
-                onClick={() => setRaiseAmount(minRaiseTotal)}
-                className="flex-1 bg-gray-700 hover:bg-gray-600 text-white text-sm py-1 rounded transition-colors"
-              >
-                Min
-              </button>
-              <button
-                onClick={() => setRaiseAmount(Math.min(minRaiseTotal * 2, playerChips))}
-                className="flex-1 bg-gray-700 hover:bg-gray-600 text-white text-sm py-1 rounded transition-colors"
-              >
-                2x
-              </button>
-              <button
-                onClick={() => setRaiseAmount(Math.min(minRaiseTotal * 3, playerChips))}
-                className="flex-1 bg-gray-700 hover:bg-gray-600 text-white text-sm py-1 rounded transition-colors"
-              >
-                3x
-              </button>
-              <button
-                onClick={() => setRaiseAmount(playerChips)}
-                className="flex-1 bg-gray-700 hover:bg-gray-600 text-white text-sm py-1 rounded transition-colors"
-              >
-                Max
-              </button>
+            {/* Quick bet buttons */}
+            <div className="grid grid-cols-4 gap-2">
+              {[
+                { label: "Min", value: minRaiseTotal },
+                { label: "2x", value: Math.min(minRaiseTotal * 2, playerChips) },
+                { label: "3x", value: Math.min(minRaiseTotal * 3, playerChips) },
+                { label: "Max", value: playerChips },
+              ].map((preset) => (
+                <button
+                  key={preset.label}
+                  onClick={() => setRaiseAmount(preset.value)}
+                  className={`
+                    py-2 rounded-lg text-sm font-semibold transition-all
+                    ${raiseAmount === preset.value
+                      ? "bg-[var(--gold-main)] text-black"
+                      : "btn-action hover:border-[var(--gold-main)]"
+                    }
+                  `}
+                >
+                  {preset.label}
+                </button>
+              ))}
             </div>
 
+            {/* Raise button */}
             <button
               onClick={() => onRaise(raiseAmount)}
               disabled={isLoading}
-              className="w-full bg-green-600 hover:bg-green-500 disabled:bg-gray-600 text-white font-bold py-3 px-4 rounded-lg transition-colors"
+              className="btn-success w-full py-4 rounded-xl font-bold uppercase tracking-wide disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             >
               Raise to {(raiseAmount / 1e9).toFixed(2)} SOL
             </button>
@@ -144,10 +206,14 @@ export const ActionPanel: FC<ActionPanelProps> = ({
         )}
       </div>
 
+      {/* Loading overlay */}
       {isLoading && (
-        <div className="mt-4 text-center">
-          <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
-          <p className="text-gray-400 text-sm mt-2">Processing...</p>
+        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center gap-3 rounded-2xl">
+          <div className="relative">
+            <div className="w-10 h-10 rounded-full border-2 border-[var(--gold-main)]/30" />
+            <div className="absolute inset-0 w-10 h-10 rounded-full border-2 border-transparent border-t-[var(--gold-main)] animate-spin" />
+          </div>
+          <p className="text-[var(--text-secondary)] text-sm">Processing transaction...</p>
         </div>
       )}
     </div>

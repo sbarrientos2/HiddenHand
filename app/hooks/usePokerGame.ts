@@ -207,7 +207,7 @@ export function usePokerGame(): UsePokerGameResult {
               seatIndex: seat.seatIndex,
               player: seat.player.toString(),
               chips: seat.chips.toNumber(),
-              currentBet: seat.currentBet.toNumber(),
+              currentBet: seat.totalBetThisHand.toNumber(), // Use total bet this hand, not per-round
               // Show cards if: current player AND cards have been dealt
               // Note: card value 0 is valid (2 of Hearts), so don't use || null
               holeCards: isCurrentPlayer && hasCards
@@ -413,6 +413,7 @@ export function usePokerGame(): UsePokerGameResult {
           })
           .rpc();
 
+        await provider.connection.confirmTransaction(tx, "confirmed");
         await refreshState();
         return tx;
       } catch (e) {
@@ -450,6 +451,7 @@ export function usePokerGame(): UsePokerGameResult {
         })
         .rpc();
 
+      await provider.connection.confirmTransaction(tx, "confirmed");
       await refreshState();
       return tx;
     } catch (e) {
@@ -486,6 +488,7 @@ export function usePokerGame(): UsePokerGameResult {
         })
         .rpc();
 
+      await provider.connection.confirmTransaction(tx, "confirmed");
       await refreshState();
       return tx;
     } catch (e) {
@@ -546,6 +549,7 @@ export function usePokerGame(): UsePokerGameResult {
         })
         .rpc();
 
+      await provider.connection.confirmTransaction(tx, "confirmed");
       await refreshState();
       return tx;
     } catch (e) {
@@ -604,6 +608,7 @@ export function usePokerGame(): UsePokerGameResult {
           })
           .rpc();
 
+        await provider.connection.confirmTransaction(tx, "confirmed");
         await refreshState();
         return tx;
       } catch (e) {
@@ -632,15 +637,27 @@ export function usePokerGame(): UsePokerGameResult {
       const [vaultPDA] = getVaultPDA(gameState.tablePDA);
 
       // Get all player seat PDAs as remaining accounts
+      // Only include seats that actually exist on-chain
       const occupied = getOccupiedSeats(gameState.table.occupiedSeats, gameState.table.maxPlayers);
-      const remainingAccounts = occupied.map((seatIndex) => {
+      const remainingAccounts: { pubkey: PublicKey; isSigner: boolean; isWritable: boolean }[] = [];
+
+      for (const seatIndex of occupied) {
         const [seatPDA] = getSeatPDA(gameState.tablePDA!, seatIndex);
-        return {
-          pubkey: seatPDA,
-          isSigner: false,
-          isWritable: true,
-        };
-      });
+        // Verify the account exists before adding
+        try {
+          const accountInfo = await provider.connection.getAccountInfo(seatPDA);
+          if (accountInfo && accountInfo.data.length > 0) {
+            remainingAccounts.push({
+              pubkey: seatPDA,
+              isSigner: false,
+              isWritable: true,
+            });
+          }
+        } catch {
+          // Skip accounts that don't exist
+          console.warn(`Seat ${seatIndex} account not found, skipping`);
+        }
+      }
 
       const tx = await program.methods
         .showdown()
@@ -653,6 +670,8 @@ export function usePokerGame(): UsePokerGameResult {
         .remainingAccounts(remainingAccounts)
         .rpc();
 
+      // Wait for confirmation before refreshing state
+      await provider.connection.confirmTransaction(tx, "confirmed");
       await refreshState();
       return tx;
     } catch (e) {

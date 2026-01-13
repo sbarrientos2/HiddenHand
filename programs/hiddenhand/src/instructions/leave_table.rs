@@ -22,18 +22,17 @@ pub struct LeaveTable<'info> {
         close = player,
         seeds = [SEAT_SEED, table.key().as_ref(), &[player_seat.seat_index]],
         bump = player_seat.bump,
-        constraint = player_seat.player == player.key() @ HiddenHandError::PlayerNotAtTable
+        has_one = player @ HiddenHandError::PlayerNotAtTable
     )]
     pub player_seat: Account<'info, PlayerSeat>,
 
-    /// Vault to withdraw from
+    /// Vault to withdraw from (SystemAccount validates System Program ownership)
     #[account(
         mut,
         seeds = [VAULT_SEED, table.key().as_ref()],
         bump
     )]
-    /// CHECK: PDA vault validated by seeds
-    pub vault: UncheckedAccount<'info>,
+    pub vault: SystemAccount<'info>,
 
     pub system_program: Program<'info, System>,
 }

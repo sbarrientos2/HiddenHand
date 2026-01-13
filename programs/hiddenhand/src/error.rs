@@ -91,4 +91,10 @@ pub enum HiddenHandError {
 
     #[msg("Arithmetic overflow")]
     Overflow,
+
+    #[msg("Duplicate accounts provided")]
+    DuplicateAccount,
+
+    #[msg("Invalid remaining accounts")]
+    InvalidRemainingAccounts,
 }

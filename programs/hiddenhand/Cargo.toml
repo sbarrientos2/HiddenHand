@@ -26,6 +26,11 @@ anchor-lang = "0.32.1"
 # TODO: Add once Anchor toolchain supports edition2024
 # inco-lightning = { version = "0.1.4", features = ["cpi"] }
 
+# Note: LiteSVM requires solana-sdk version matching anchor-lang's requirements
+# For now, we use standard Rust tests which don't need these dependencies
+# TODO: Add LiteSVM once solana-sdk versions align with Anchor 0.32.1
+# [dev-dependencies]
+# litesvm = "0.3"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }

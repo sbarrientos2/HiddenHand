@@ -1,4 +1,5 @@
 use anchor_lang::prelude::*;
+use std::collections::BTreeSet;
 
 use crate::constants::*;
 use crate::error::HiddenHandError;
@@ -58,6 +59,22 @@ pub fn handler(ctx: Context<DealAllCards>) -> Result<()> {
     let bb_seat = &mut ctx.accounts.bb_seat;
     let clock = Clock::get()?;
 
+    // Security: Check SB and BB are different accounts
+    require!(
+        sb_seat.key() != bb_seat.key(),
+        HiddenHandError::DuplicateAccount
+    );
+
+    // Security: Check for duplicate accounts in remaining_accounts
+    let mut seen_keys: BTreeSet<Pubkey> = BTreeSet::new();
+    seen_keys.insert(sb_seat.key());
+    seen_keys.insert(bb_seat.key());
+    for account in ctx.remaining_accounts.iter() {
+        if !seen_keys.insert(*account.key) {
+            return Err(HiddenHandError::DuplicateAccount.into());
+        }
+    }
+
     // Validate phase
     require!(
         hand_state.phase == GamePhase::Dealing,
@@ -113,6 +130,11 @@ pub fn handler(ctx: Context<DealAllCards>) -> Result<()> {
 
     // Deal to SB if they have chips
     if sb_seat.chips > 0 {
+        // Reset bet tracking for new hand before posting blind
+        sb_seat.current_bet = 0;
+        sb_seat.total_bet_this_hand = 0;
+        sb_seat.has_acted = false;
+
         let sb_amount = sb_seat.place_bet(table.small_blind);
         hand_state.pot = hand_state.pot.saturating_add(sb_amount);
         sb_seat.status = PlayerStatus::Playing;
@@ -130,6 +152,11 @@ pub fn handler(ctx: Context<DealAllCards>) -> Result<()> {
 
     // Deal to BB if they have chips
     if bb_seat.chips > 0 {
+        // Reset bet tracking for new hand before posting blind
+        bb_seat.current_bet = 0;
+        bb_seat.total_bet_this_hand = 0;
+        bb_seat.has_acted = false;
+
         let bb_amount = bb_seat.place_bet(table.big_blind);
         hand_state.pot = hand_state.pot.saturating_add(bb_amount);
         bb_seat.status = PlayerStatus::Playing;

@@ -1,6 +1,7 @@
 "use client";
 
 import { FC, useState, useEffect } from "react";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 interface ActionPanelProps {
   isPlayerTurn: boolean;
@@ -31,11 +32,21 @@ export const ActionPanel: FC<ActionPanelProps> = ({
 }) => {
   const minRaiseTotal = toCall + minRaise;
   const [raiseAmount, setRaiseAmount] = useState(minRaiseTotal);
+  const [showAllInConfirm, setShowAllInConfirm] = useState(false);
 
   // Update raise amount when minRaise changes
   useEffect(() => {
     setRaiseAmount(Math.max(minRaiseTotal, raiseAmount));
   }, [minRaiseTotal]);
+
+  const handleAllInClick = () => {
+    setShowAllInConfirm(true);
+  };
+
+  const handleAllInConfirm = () => {
+    setShowAllInConfirm(false);
+    onAllIn();
+  };
 
   if (!isPlayerTurn) {
     return (
@@ -112,16 +123,18 @@ export const ActionPanel: FC<ActionPanelProps> = ({
           ) : (
             <button
               onClick={onCall}
-              disabled={isLoading || playerChips < toCall}
+              disabled={isLoading}
               className="btn-info py-4 rounded-xl font-bold uppercase tracking-wide disabled:opacity-50 disabled:cursor-not-allowed transition-all flex flex-col items-center gap-0.5"
             >
-              <span>Call</span>
-              <span className="text-xs opacity-80">{(toCall / 1e9).toFixed(2)}</span>
+              <span>{playerChips >= toCall ? "Call" : "Call All-In"}</span>
+              <span className="text-xs opacity-80">
+                {(Math.min(toCall, playerChips) / 1e9).toFixed(2)}
+              </span>
             </button>
           )}
 
           <button
-            onClick={onAllIn}
+            onClick={handleAllInClick}
             disabled={isLoading}
             className="btn-gold py-4 rounded-xl font-bold uppercase tracking-wide disabled:opacity-50 disabled:cursor-not-allowed transition-all animate-pulse-gold"
           >
@@ -216,6 +229,18 @@ export const ActionPanel: FC<ActionPanelProps> = ({
           <p className="text-[var(--text-secondary)] text-sm">Processing transaction...</p>
         </div>
       )}
+
+      {/* All-In Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={showAllInConfirm}
+        title="Confirm All-In"
+        message={`You are about to go all-in with ${(playerChips / 1e9).toFixed(4)} SOL. This action cannot be undone. Are you sure?`}
+        confirmLabel="Go All-In"
+        cancelLabel="Cancel"
+        onConfirm={handleAllInConfirm}
+        onCancel={() => setShowAllInConfirm(false)}
+        variant="gold"
+      />
     </div>
   );
 };

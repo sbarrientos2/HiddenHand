@@ -4,15 +4,20 @@ import { useWallet } from "@solana/wallet-adapter-react";
 import { WalletButton } from "@/components/WalletButton";
 import { PokerTable } from "@/components/PokerTable";
 import { ActionPanel } from "@/components/ActionPanel";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { usePokerGame, type ActionType } from "@/hooks/usePokerGame";
 import { ActionTimer } from "@/components/ActionTimer";
 import { OpponentTimer } from "@/components/OpponentTimer";
+import { ShowdownTimeoutPanel } from "@/components/ShowdownTimeoutPanel";
+import { AuthorityTimeoutPanel } from "@/components/AuthorityTimeoutPanel";
+import { TransactionToast, useTransactionToasts } from "@/components/TransactionToast";
+import { GameHistory, useGameHistory } from "@/components/GameHistory";
 import { NETWORK } from "@/contexts/WalletProvider";
 import { solToLamports, lamportsToSol } from "@/lib/utils";
+import { evaluateHand, getHandDescription } from "@/lib/handEval";
 
 export default function Home() {
-  const { connected, publicKey } = useWallet();
+  const { connected, publicKey, disconnect } = useWallet();
   const {
     gameState,
     loading,
@@ -27,6 +32,34 @@ export default function Home() {
     timeoutPlayer,
     setTableId,
   } = usePokerGame();
+
+  // Transaction toast notifications
+  const {
+    transactions,
+    addTransaction,
+    updateTransaction,
+    dismissTransaction,
+  } = useTransactionToasts();
+
+  // Game history/action log
+  const { events: gameEvents, addEvent: addGameEvent, clearHistory } = useGameHistory();
+
+  // Wrapper to execute actions with toast notifications
+  const withToast = async (
+    action: () => Promise<string>,
+    pendingMessage: string,
+    successMessage: string
+  ) => {
+    try {
+      const tx = await action();
+      const toastId = addTransaction(tx, pendingMessage);
+      // Mark as confirmed after a short delay (confirmation already happened in the hook)
+      setTimeout(() => updateTransaction(toastId, "confirmed"), 500);
+      return tx;
+    } catch (e) {
+      throw e;
+    }
+  };
 
   // UI state
   const [tableIdInput, setTableIdInput] = useState("demo-table");
@@ -59,6 +92,122 @@ export default function Home() {
     }
   }, [gameState.table, buyInSol]);
 
+  // Track phase changes, community cards, and winners for game history
+  const prevPhaseRef = useRef(gameState.phase);
+  const prevCommunityRef = useRef<number[]>([]);
+  const isFirstRenderRef = useRef(true);
+  // Track chips before showdown to detect winners
+  const chipsBeforeShowdownRef = useRef<Map<number, number>>(new Map());
+
+  useEffect(() => {
+    // Skip logging on first render (initial state)
+    if (isFirstRenderRef.current) {
+      isFirstRenderRef.current = false;
+      prevPhaseRef.current = gameState.phase;
+      return;
+    }
+
+    // Track phase changes
+    if (prevPhaseRef.current !== gameState.phase) {
+      // Phase messages - Flop/Turn/River handled by card events, no duplicate messages
+      const phaseMessages: Record<string, string | null> = {
+        "Dealing": "New hand starting...",
+        "PreFlop": "Pre-flop betting",
+        "Flop": null,  // Card event will show "Flop: X♥ Y♣ Z♠"
+        "Turn": null,  // Card event will show "Turn: X♥"
+        "River": null, // Card event will show "River: X♥"
+        "Showdown": "Showdown!",
+        "Settled": "Hand complete",
+      };
+      const message = phaseMessages[gameState.phase];
+
+      // When entering Showdown, capture current chip counts
+      if (gameState.phase === "Showdown") {
+        const chipMap = new Map<number, number>();
+        gameState.players.forEach((p) => {
+          if (p.status !== "empty") {
+            chipMap.set(p.seatIndex, p.chips);
+          }
+        });
+        chipsBeforeShowdownRef.current = chipMap;
+      }
+
+      // When settling, detect winners by comparing chips
+      if (gameState.phase === "Settled" && chipsBeforeShowdownRef.current.size > 0) {
+        const winners: { seatIndex: number; winnings: number; handDesc?: string }[] = [];
+
+        // Get community cards for hand evaluation
+        const community = gameState.communityCards
+          .map(c => Number(c))
+          .filter(c => !isNaN(c) && c !== 255);
+
+        gameState.players.forEach((p) => {
+          if (p.status !== "empty") {
+            const chipsBefore = chipsBeforeShowdownRef.current.get(p.seatIndex) ?? 0;
+            const chipsNow = p.chips;
+            if (chipsNow > chipsBefore) {
+              // Try to evaluate hand if we have hole cards (only for current player)
+              let handDesc: string | undefined;
+              if (p.holeCards[0] !== null && p.holeCards[1] !== null && community.length === 5) {
+                const allCards = [p.holeCards[0], p.holeCards[1], ...community];
+                const evaluated = evaluateHand(allCards);
+                handDesc = getHandDescription(evaluated);
+              }
+
+              winners.push({
+                seatIndex: p.seatIndex,
+                winnings: chipsNow - chipsBefore,
+                handDesc,
+              });
+            }
+          }
+        });
+
+        // Add winner events
+        winners.forEach((winner) => {
+          const winningsInSol = lamportsToSol(winner.winnings);
+          const handInfo = winner.handDesc ? ` with ${winner.handDesc}` : "";
+          addGameEvent("winner", `Seat ${winner.seatIndex + 1} won ${winningsInSol.toFixed(2)} SOL${handInfo}`, {
+            seatIndex: winner.seatIndex,
+            amount: winner.winnings,
+          });
+        });
+
+        // Clear the chip tracking for next hand
+        chipsBeforeShowdownRef.current = new Map();
+      }
+
+      // Only add phase event if there's a message (Flop/Turn/River handled by card events)
+      if (message) {
+        addGameEvent("phase", message);
+      }
+
+      // Add separator when new hand starts (don't clear history)
+      if (gameState.phase === "Dealing") {
+        addGameEvent("system", "━━━━━━ New Hand ━━━━━━");
+      }
+
+      prevPhaseRef.current = gameState.phase;
+    }
+
+    // Track community card reveals
+    // Ensure cards are plain numbers (not BN, buffer values, etc.)
+    const currentCommunity = gameState.communityCards
+      .map(c => Number(c))
+      .filter(c => !isNaN(c) && c !== 255);
+    if (currentCommunity.length > prevCommunityRef.current.length) {
+      const newCards = currentCommunity.slice(prevCommunityRef.current.length);
+      if (newCards.length === 3) {
+        addGameEvent("cards", "Flop:", { cards: newCards });
+      } else if (newCards.length === 1 && currentCommunity.length === 4) {
+        addGameEvent("cards", "Turn:", { cards: newCards });
+      } else if (newCards.length === 1 && currentCommunity.length === 5) {
+        addGameEvent("cards", "River:", { cards: newCards });
+      }
+      prevCommunityRef.current = [...currentCommunity];
+    }
+  }, [gameState.phase, gameState.communityCards, gameState.players, addGameEvent]);
+
   // Find current player info
   const currentPlayer = gameState.players.find(
     (p) => p.player === publicKey?.toString()
@@ -90,31 +239,50 @@ export default function Home() {
   const toCall = Math.max(0, gameState.currentBet - (currentPlayer?.currentBet ?? 0));
   const canCheck = toCall <= 0;
 
+  // Check if we're in a betting phase (for showing timers)
+  const isBettingPhase = ["PreFlop", "Flop", "Turn", "River"].includes(gameState.phase);
+
   // Handle player action
   const handleAction = async (action: string, amount?: number) => {
     let actionType: ActionType;
+    let actionLabel: string;
     switch (action) {
       case "fold":
         actionType = { type: "fold" };
+        actionLabel = "Fold";
         break;
       case "check":
         actionType = { type: "check" };
+        actionLabel = "Check";
         break;
       case "call":
         actionType = { type: "call" };
+        actionLabel = toCall > 0 ? `Call ${lamportsToSol(toCall).toFixed(2)} SOL` : "Call";
         break;
       case "raise":
         actionType = { type: "raise", amount: amount ?? 0 };
+        actionLabel = `Raise to ${lamportsToSol(amount ?? 0).toFixed(2)} SOL`;
         break;
       case "allin":
         actionType = { type: "allIn" };
+        actionLabel = "All-In";
         break;
       default:
         return;
     }
 
     try {
-      await playerAction(actionType);
+      await withToast(
+        () => playerAction(actionType),
+        `Submitting ${actionLabel}...`,
+        `${actionLabel} confirmed`
+      );
+      // Log the action to game history (use 1-indexed seats for display)
+      const seatLabel = currentPlayer ? `Seat ${currentPlayer.seatIndex + 1}` : "Player";
+      addGameEvent("action", `${seatLabel}: ${actionLabel}`, {
+        seatIndex: currentPlayer?.seatIndex,
+        amount: amount,
+      });
     } catch (e) {
       console.error("Action failed:", e);
     }
@@ -123,17 +291,27 @@ export default function Home() {
   // Handle create table
   const handleCreateTable = async () => {
     try {
-      await createTable({
-        tableId: tableIdInput,
-        smallBlind: solToLamports(createConfig.smallBlind),
-        bigBlind: solToLamports(createConfig.bigBlind),
-        minBuyIn: solToLamports(createConfig.minBuyIn),
-        maxBuyIn: solToLamports(createConfig.maxBuyIn),
-        maxPlayers: createConfig.maxPlayers,
-      });
+      await withToast(
+        () => createTable({
+          tableId: tableIdInput,
+          smallBlind: solToLamports(createConfig.smallBlind),
+          bigBlind: solToLamports(createConfig.bigBlind),
+          minBuyIn: solToLamports(createConfig.minBuyIn),
+          maxBuyIn: solToLamports(createConfig.maxBuyIn),
+          maxPlayers: createConfig.maxPlayers,
+        }),
+        "Creating table...",
+        "Table created"
+      );
       setShowCreateModal(false);
     } catch (e) {
-      console.error("Create failed:", e);
+      // Handle "table already exists" gracefully - table was loaded, not an error
+      if (e instanceof Error && e.message.includes("already exists")) {
+        setShowCreateModal(false);
+        // The table is now loaded in state, no need to show error
+      } else {
+        console.error("Create failed:", e);
+      }
     }
   };
 
@@ -141,7 +319,11 @@ export default function Home() {
   const handleJoinTable = async () => {
     if (selectedSeat === null) return;
     try {
-      await joinTable(selectedSeat, solToLamports(buyInSol));
+      await withToast(
+        () => joinTable(selectedSeat, solToLamports(buyInSol)),
+        `Joining table with ${buyInSol} SOL...`,
+        "Joined table"
+      );
       setSelectedSeat(null);
     } catch (e) {
       console.error("Join failed:", e);
@@ -387,8 +569,20 @@ export default function Home() {
 
                 {/* Error display */}
                 {error && (
-                  <div className="ml-auto glass-dark border border-[var(--status-danger)]/30 rounded-xl px-4 py-2">
-                    <span className="text-[var(--status-danger)] text-sm">{error}</span>
+                  <div className="ml-auto glass-dark border border-[var(--status-danger)]/30 rounded-xl px-4 py-2 flex items-center gap-3">
+                    <span className="text-[var(--status-danger)] text-sm">
+                      {error.startsWith("WALLET_DISCONNECTED:")
+                        ? error.replace("WALLET_DISCONNECTED:", "")
+                        : error}
+                    </span>
+                    {error.startsWith("WALLET_DISCONNECTED:") && (
+                      <button
+                        onClick={() => disconnect()}
+                        className="px-3 py-1 text-xs font-semibold rounded-lg bg-[var(--status-danger)]/20 text-[var(--status-danger)] hover:bg-[var(--status-danger)]/30 transition-colors"
+                      >
+                        Disconnect
+                      </button>
+                    )}
                   </div>
                 )}
 
@@ -429,7 +623,11 @@ export default function Home() {
                         {gameState.tableStatus === "Waiting" && totalPlayers >= 2 && (
                           canStart ? (
                             <button
-                              onClick={() => startHand()}
+                              onClick={() => withToast(
+                                () => startHand(),
+                                "Starting hand...",
+                                "Hand started"
+                              )}
                               disabled={loading}
                               className="btn-gold px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50"
                             >
@@ -446,7 +644,11 @@ export default function Home() {
                         {gameState.phase === "Dealing" && (
                           canStart ? (
                             <button
-                              onClick={() => dealCards()}
+                              onClick={() => withToast(
+                                () => dealCards(),
+                                "Dealing cards...",
+                                "Cards dealt"
+                              )}
                               disabled={loading}
                               className="btn-gold px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50"
                             >
@@ -482,6 +684,49 @@ export default function Home() {
                   )}
                 </div>
               </div>
+            )}
+
+            {/* Start Hand timeout panel for non-authority players */}
+            {!gameState.isAuthority && currentPlayer && gameState.table &&
+              gameState.tableStatus === "Waiting" &&
+              gameState.players.filter((p) => p.status !== "empty" && p.chips > 0).length >= 2 && (
+              <AuthorityTimeoutPanel
+                lastTimestamp={gameState.lastReadyTime}
+                delayBeforeShowing={30}
+                timeoutSeconds={60}
+                waitingMessage="Waiting for authority to start hand..."
+                readyMessage="Timeout reached - you can start the hand"
+                buttonLabel="Start Hand"
+                onAction={() => withToast(() => startHand(), "Starting hand...", "Hand started")}
+                isLoading={loading}
+              />
+            )}
+
+            {/* Deal Cards timeout panel for non-authority players */}
+            {!gameState.isAuthority && currentPlayer && gameState.table &&
+              gameState.phase === "Dealing" && (
+              <AuthorityTimeoutPanel
+                lastTimestamp={gameState.lastActionTime}
+                delayBeforeShowing={15}
+                timeoutSeconds={30}
+                waitingMessage="Waiting for authority to deal cards..."
+                readyMessage="Timeout reached - you can deal the cards"
+                buttonLabel="Deal Cards"
+                onAction={() => withToast(() => dealCards(), "Dealing cards...", "Cards dealt")}
+                isLoading={loading}
+              />
+            )}
+
+            {/* Showdown button for non-authority players (after timeout) */}
+            {!gameState.isAuthority && currentPlayer && gameState.table &&
+              (gameState.phase === "Showdown" ||
+                (gameState.phase === "Settled" && gameState.pot > 0)) && (
+              <ShowdownTimeoutPanel
+                lastActionTime={gameState.lastActionTime}
+                phase={gameState.phase}
+                onShowdown={showdown}
+                isLoading={loading}
+              />
             )}
 
             {/* Poker table */}
@@ -532,8 +777,8 @@ export default function Home() {
                   </div>
                 )}
 
-                {/* Opponent timer - shows when waiting for another player */}
-                {!isPlayerTurn && gameState.lastActionTime && (
+                {/* Opponent timer - shows when waiting for another player during betting */}
+                {!isPlayerTurn && isBettingPhase && gameState.lastActionTime && (
                   <OpponentTimer
                     lastActionTime={gameState.lastActionTime}
                     actionOn={gameState.actionOn}
@@ -561,6 +806,14 @@ export default function Home() {
                   onAllIn={() => handleAction("allin")}
                   isLoading={loading}
                 />
+
+              </div>
+            )}
+
+            {/* Game History - always visible when there are events */}
+            {gameEvents.length > 0 && gameState.table && (
+              <div className="max-w-lg mx-auto mt-4">
+                <GameHistory events={gameEvents} maxHeight="250px" />
               </div>
             )}
 
@@ -770,6 +1023,13 @@ export default function Home() {
           </a>
         </p>
       </footer>
+
+      {/* Transaction Toasts */}
+      <TransactionToast
+        transactions={transactions}
+        onDismiss={dismissTransaction}
+        cluster={NETWORK === "localnet" ? "localnet" : "devnet"}
+      />
     </main>
   );
 }

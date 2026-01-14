@@ -35,6 +35,7 @@ export interface TableAccount {
   handNumber: BN;
   occupiedSeats: number;
   dealerPosition: number;
+  lastReadyTime: BN; // Unix timestamp for start_hand timeout
   bump: number;
 }
 
@@ -101,6 +102,7 @@ export interface GameState {
   isAuthority: boolean;
   currentPlayerSeat: number | null;
   lastActionTime: number | null; // Unix timestamp for timeout tracking
+  lastReadyTime: number | null; // Unix timestamp for start_hand timeout
 }
 
 export interface UsePokerGameResult {
@@ -159,6 +161,7 @@ const initialGameState: GameState = {
   isAuthority: false,
   currentPlayerSeat: null,
   lastActionTime: null,
+  lastReadyTime: null,
 };
 
 export function usePokerGame(): UsePokerGameResult {
@@ -204,21 +207,24 @@ export function usePokerGame(): UsePokerGameResult {
             const holeCard1 = seat.holeCard1.toNumber();
             const holeCard2 = seat.holeCard2.toNumber();
 
-            // Check if cards have been dealt (status is Playing or AllIn means cards are dealt)
-            const hasCards = seat.status.playing !== undefined || seat.status.allIn !== undefined;
+            // Check if cards have been dealt - card value 255 means not dealt
+            // Cards remain valid through showdown and settlement for hand evaluation
+            const hasValidCards = holeCard1 !== 255 && holeCard2 !== 255 &&
+                                  holeCard1 >= 0 && holeCard1 <= 51 &&
+                                  holeCard2 >= 0 && holeCard2 <= 51;
 
             players.push({
               seatIndex: seat.seatIndex,
               player: seat.player.toString(),
               chips: seat.chips.toNumber(),
               currentBet: seat.totalBetThisHand.toNumber(), // Use total bet this hand, not per-round
-              // Show cards if: current player AND cards have been dealt
-              // Note: card value 0 is valid (2 of Hearts), so don't use || null
-              holeCards: isCurrentPlayer && hasCards
+              // Show cards if: current player AND cards are valid (0-51, not 255)
+              // This allows seeing cards during showdown and settlement for hand evaluation
+              holeCards: isCurrentPlayer && hasValidCards
                 ? [holeCard1, holeCard2]
                 : [null, null],
               status: mapPlayerStatus(seat.status),
-              isActive: hasCards,
+              isActive: hasValidCards,
             });
           } catch (e) {
             // Seat PDA doesn't exist yet
@@ -298,7 +304,21 @@ export function usePokerGame(): UsePokerGameResult {
       }
 
       const phase = handState ? mapGamePhase(handState.phase) : "Settled";
-      const communityCards = handState?.communityCards ?? [];
+      // Convert community cards to plain numbers
+      // They come from on-chain as Vec<u8>, which Anchor might deserialize as Buffer/Uint8Array or number[]
+      let communityCards: number[] = [];
+      if (handState?.communityCards) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const raw = handState.communityCards as any;
+        if (Array.isArray(raw)) {
+          communityCards = raw.map((c: unknown) => typeof c === 'number' ? c : Number(c));
+        } else if (raw instanceof Uint8Array || (typeof Buffer !== 'undefined' && Buffer.isBuffer(raw))) {
+          communityCards = Array.from(raw);
+        } else if (raw && typeof raw[Symbol.iterator] === 'function') {
+          // Fallback: try to iterate
+          communityCards = Array.from(raw);
+        }
+      }
 
       setGameState((prev) => ({
         ...prev,
@@ -318,6 +338,7 @@ export function usePokerGame(): UsePokerGameResult {
         isAuthority,
         currentPlayerSeat,
         lastActionTime: handState?.lastActionTime?.toNumber() ?? null,
+        lastReadyTime: table.lastReadyTime?.toNumber() ?? null,
       }));
 
       setError(null);
@@ -359,6 +380,15 @@ export function usePokerGame(): UsePokerGameResult {
         const tableIdBytes = generateTableId(config.tableId);
         const [tablePDA] = getTablePDA(tableIdBytes);
         const [vaultPDA] = getVaultPDA(tablePDA);
+
+        // Check if table already exists using getAccountInfo (cleaner than fetch)
+        const existingAccount = await provider.connection.getAccountInfo(tablePDA);
+        if (existingAccount !== null) {
+          // Table exists - load it and inform user
+          setTableId(config.tableId);
+          await refreshState();
+          throw new Error(`Table "${config.tableId}" already exists. Loading existing table instead.`);
+        }
 
         const tx = await program.methods
           .createTable(
@@ -525,22 +555,29 @@ export function usePokerGame(): UsePokerGameResult {
       // Find SB and BB positions
       const dealerPos = gameState.table.dealerPosition;
       const occupied = getOccupiedSeats(gameState.table.occupiedSeats, gameState.table.maxPlayers);
+      const isHeadsUp = occupied.length === 2;
 
       // Find next occupied seats after dealer for SB and BB
-      const findNextOccupied = (startPos: number, skip: number): number => {
-        let found = 0;
-        let pos = startPos;
-        while (found <= skip) {
+      const findNextOccupied = (startPos: number): number => {
+        let pos = (startPos + 1) % gameState.table!.maxPlayers;
+        while (!occupied.includes(pos)) {
           pos = (pos + 1) % gameState.table!.maxPlayers;
-          if (occupied.includes(pos)) {
-            found++;
-          }
         }
         return pos;
       };
 
-      const sbPos = findNextOccupied(dealerPos, 0);
-      const bbPos = findNextOccupied(dealerPos, 1);
+      let sbPos: number;
+      let bbPos: number;
+
+      if (isHeadsUp) {
+        // Heads-up: dealer is SB, other player is BB
+        sbPos = dealerPos;
+        bbPos = findNextOccupied(dealerPos);
+      } else {
+        // Standard: SB is left of dealer, BB is left of SB
+        sbPos = findNextOccupied(dealerPos);
+        bbPos = findNextOccupied(sbPos);
+      }
 
       const [sbSeatPDA] = getSeatPDA(gameState.tablePDA, sbPos);
       const [bbSeatPDA] = getSeatPDA(gameState.tablePDA, bbPos);
@@ -703,6 +740,7 @@ export function usePokerGame(): UsePokerGameResult {
     try {
       const handNumber = BigInt(gameState.table.handNumber.toNumber());
       const [handPDA] = getHandPDA(gameState.tablePDA, handNumber);
+      const [deckPDA] = getDeckPDA(gameState.tablePDA, handNumber);
 
       // Get the seat of the player whose turn it is
       const actionOn = gameState.handState.actionOn;
@@ -714,6 +752,7 @@ export function usePokerGame(): UsePokerGameResult {
           caller: publicKey,
           table: gameState.tablePDA,
           handState: handPDA,
+          deckState: deckPDA,
           playerSeat: timedOutSeatPDA,
         })
         .rpc();

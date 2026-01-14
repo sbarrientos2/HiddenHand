@@ -77,23 +77,39 @@ pub fn handler(ctx: Context<StartHand>) -> Result<()> {
     // Calculate positions
     let dealer_pos = table.dealer_position;
     let max_players = table.max_players;
+    let is_heads_up = table.current_players == 2;
 
     // Find small blind and big blind positions
-    let mut sb_pos = (dealer_pos + 1) % max_players;
-    while !table.is_seat_occupied(sb_pos) {
-        sb_pos = (sb_pos + 1) % max_players;
-    }
+    // In heads-up (2 players): dealer = SB, other player = BB
+    // In 3+ players: SB is left of dealer, BB is left of SB
+    let (sb_pos, bb_pos, action_pos) = if is_heads_up {
+        // Heads-up: dealer is SB
+        let sb = dealer_pos;
+        let mut bb = (dealer_pos + 1) % max_players;
+        while !table.is_seat_occupied(bb) {
+            bb = (bb + 1) % max_players;
+        }
+        // In heads-up, SB (dealer) acts first preflop
+        (sb, bb, sb)
+    } else {
+        // Standard: SB is left of dealer
+        let mut sb = (dealer_pos + 1) % max_players;
+        while !table.is_seat_occupied(sb) {
+            sb = (sb + 1) % max_players;
+        }
 
-    let mut bb_pos = (sb_pos + 1) % max_players;
-    while !table.is_seat_occupied(bb_pos) {
-        bb_pos = (bb_pos + 1) % max_players;
-    }
+        let mut bb = (sb + 1) % max_players;
+        while !table.is_seat_occupied(bb) {
+            bb = (bb + 1) % max_players;
+        }
 
-    // First to act preflop is after big blind
-    let mut action_pos = (bb_pos + 1) % max_players;
-    while !table.is_seat_occupied(action_pos) {
-        action_pos = (action_pos + 1) % max_players;
-    }
+        // First to act preflop is after big blind (UTG)
+        let mut action = (bb + 1) % max_players;
+        while !table.is_seat_occupied(action) {
+            action = (action + 1) % max_players;
+        }
+        (sb, bb, action)
+    };
 
     // Initialize hand state
     let hand_state = &mut ctx.accounts.hand_state;

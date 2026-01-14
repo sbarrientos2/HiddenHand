@@ -14,6 +14,7 @@ pub const COMMUNITY_CARDS: usize = 5;
 
 // Timeouts (in seconds - works consistently across all environments including MagicBlock ER)
 pub const ACTION_TIMEOUT_SECONDS: i64 = 60; // 60 seconds to act
+pub const DEAL_TIMEOUT_SECONDS: i64 = 30; // 30 seconds to deal (faster since it should be immediate)
 pub const EMERGENCY_TIMEOUT_SECONDS: i64 = 86400; // 24 hours for emergency withdraw
 
 // Betting

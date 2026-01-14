@@ -214,6 +214,18 @@ export function parseAnchorError(error: unknown, context?: {
     }
   }
 
+  // Check for wallet disconnection/session errors (Backpack, Phantom, etc.)
+  if (
+    errorStr.includes("UserKeyring not found") ||
+    errorStr.includes("WalletSignTransactionError") ||
+    errorStr.includes("Wallet not connected") ||
+    errorStr.includes("WalletNotConnectedError") ||
+    errorStr.includes("WalletDisconnectedError") ||
+    errorStr.includes("invariant violation")
+  ) {
+    return "WALLET_DISCONNECTED:Wallet session expired. Please disconnect and reconnect your wallet.";
+  }
+
   // Check for common Solana/wallet errors
   if (errorStr.includes("insufficient funds") || errorStr.includes("Insufficient")) {
     return "Insufficient SOL in your wallet for this transaction.";

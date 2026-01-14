@@ -66,7 +66,7 @@ pub fn handler(ctx: Context<DealAllCards>) -> Result<()> {
     if !is_authority {
         let elapsed = clock.unix_timestamp - hand_state.last_action_time;
         require!(
-            elapsed >= ACTION_TIMEOUT_SECONDS,
+            elapsed >= DEAL_TIMEOUT_SECONDS,
             HiddenHandError::UnauthorizedAuthority
         );
         msg!("Non-authority dealing cards after {} seconds timeout", elapsed);

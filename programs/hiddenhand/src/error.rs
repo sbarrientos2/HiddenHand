@@ -59,6 +59,9 @@ pub enum HiddenHandError {
     #[msg("Player action timeout")]
     ActionTimeout,
 
+    #[msg("Player has not timed out yet - must wait 60 seconds")]
+    ActionNotTimedOut,
+
     #[msg("Only table authority can perform this action")]
     UnauthorizedAuthority,
 
@@ -70,6 +73,9 @@ pub enum HiddenHandError {
 
     #[msg("Deck already shuffled for this hand")]
     DeckAlreadyShuffled,
+
+    #[msg("Deck not yet shuffled - request VRF shuffle first")]
+    DeckNotShuffled,
 
     #[msg("Cards not yet dealt")]
     CardsNotDealt,

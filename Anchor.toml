@@ -11,6 +11,7 @@ inco_lightning = "5sjEbPiqgZrYwR31ahR6Uk9wf5awoX61YGg7jExQSwaj"
 
 [programs.localnet]
 hiddenhand = "HS3GdhRBU3jMT4G6ogKVktKaibqsMhPRhDhNsmgzeB8Q"
+mb_test = "9h6kf5BhG7nfKFJhtkxJzMdKGRRwgomp5cVYTG8AUYpT"
 
 [registry]
 url = "https://api.apr.dev"

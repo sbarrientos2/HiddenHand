@@ -18,6 +18,7 @@ import {
   mapGamePhase,
   mapTableStatus,
   getOccupiedSeats,
+  parseAnchorError,
 } from "@/lib/utils";
 
 // Types matching the IDL
@@ -51,8 +52,8 @@ export interface HandStateAccount {
   activePlayers: number;
   actedThisRound: number;
   activeCount: number;
-  lastActionSlot: BN;
-  handStartSlot: BN;
+  lastActionTime: BN;  // Unix timestamp (seconds)
+  handStartTime: BN;   // Unix timestamp (seconds)
   bump: number;
 }
 
@@ -99,6 +100,7 @@ export interface GameState {
   bigBlind: number;
   isAuthority: boolean;
   currentPlayerSeat: number | null;
+  lastActionTime: number | null; // Unix timestamp for timeout tracking
 }
 
 export interface UsePokerGameResult {
@@ -115,6 +117,7 @@ export interface UsePokerGameResult {
   dealCards: () => Promise<string>;
   playerAction: (action: ActionType) => Promise<string>;
   showdown: () => Promise<string>;
+  timeoutPlayer: () => Promise<string>;
 
   // Utilities
   refreshState: () => Promise<void>;
@@ -155,6 +158,7 @@ const initialGameState: GameState = {
   bigBlind: 0,
   isAuthority: false,
   currentPlayerSeat: null,
+  lastActionTime: null,
 };
 
 export function usePokerGame(): UsePokerGameResult {
@@ -313,6 +317,7 @@ export function usePokerGame(): UsePokerGameResult {
         bigBlind: table.bigBlind.toNumber(),
         isAuthority,
         currentPlayerSeat,
+        lastActionTime: handState?.lastActionTime?.toNumber() ?? null,
       }));
 
       setError(null);
@@ -378,7 +383,7 @@ export function usePokerGame(): UsePokerGameResult {
 
         return tx;
       } catch (e) {
-        const message = e instanceof Error ? e.message : "Failed to create table";
+        const message = parseAnchorError(e);
         setError(message);
         throw e;
       } finally {
@@ -417,14 +422,17 @@ export function usePokerGame(): UsePokerGameResult {
         await refreshState();
         return tx;
       } catch (e) {
-        const message = e instanceof Error ? e.message : "Failed to join table";
+        const message = parseAnchorError(e, {
+          minBuyIn: gameState.table?.minBuyIn.toNumber(),
+          maxBuyIn: gameState.table?.maxBuyIn.toNumber(),
+        });
         setError(message);
         throw e;
       } finally {
         setLoading(false);
       }
     },
-    [program, provider, publicKey, gameState.tablePDA, refreshState]
+    [program, provider, publicKey, gameState.tablePDA, gameState.table, refreshState]
   );
 
   // Leave table
@@ -455,7 +463,7 @@ export function usePokerGame(): UsePokerGameResult {
       await refreshState();
       return tx;
     } catch (e) {
-      const message = e instanceof Error ? e.message : "Failed to leave table";
+      const message = parseAnchorError(e);
       setError(message);
       throw e;
     } finally {
@@ -480,7 +488,7 @@ export function usePokerGame(): UsePokerGameResult {
       const tx = await program.methods
         .startHand()
         .accounts({
-          authority: publicKey,
+          caller: publicKey,
           table: gameState.tablePDA,
           handState: handPDA,
           deckState: deckPDA,
@@ -492,7 +500,7 @@ export function usePokerGame(): UsePokerGameResult {
       await refreshState();
       return tx;
     } catch (e) {
-      const message = e instanceof Error ? e.message : "Failed to start hand";
+      const message = parseAnchorError(e);
       setError(message);
       throw e;
     } finally {
@@ -500,7 +508,7 @@ export function usePokerGame(): UsePokerGameResult {
     }
   }, [program, provider, publicKey, gameState.tablePDA, gameState.table, refreshState]);
 
-  // Deal cards (authority only)
+  // Deal cards (authority can call immediately, anyone else after timeout)
   const dealCards = useCallback(async (): Promise<string> => {
     if (!program || !provider || !publicKey || !gameState.tablePDA || !gameState.table) {
       throw new Error("Table not ready");
@@ -540,7 +548,7 @@ export function usePokerGame(): UsePokerGameResult {
       const tx = await program.methods
         .dealCards()
         .accounts({
-          authority: publicKey,
+          caller: publicKey,
           table: gameState.tablePDA,
           handState: handPDA,
           deckState: deckPDA,
@@ -553,7 +561,7 @@ export function usePokerGame(): UsePokerGameResult {
       await refreshState();
       return tx;
     } catch (e) {
-      const message = e instanceof Error ? e.message : "Failed to deal cards";
+      const message = parseAnchorError(e);
       setError(message);
       throw e;
     } finally {
@@ -612,7 +620,7 @@ export function usePokerGame(): UsePokerGameResult {
         await refreshState();
         return tx;
       } catch (e) {
-        const message = e instanceof Error ? e.message : "Action failed";
+        const message = parseAnchorError(e);
         setError(message);
         throw e;
       } finally {
@@ -622,7 +630,7 @@ export function usePokerGame(): UsePokerGameResult {
     [program, provider, publicKey, gameState.tablePDA, gameState.table, gameState.currentPlayerSeat, refreshState]
   );
 
-  // Showdown (authority only)
+  // Showdown (authority can call immediately, anyone else after timeout)
   const showdown = useCallback(async (): Promise<string> => {
     if (!program || !provider || !publicKey || !gameState.tablePDA || !gameState.table) {
       throw new Error("Table not ready");
@@ -662,7 +670,7 @@ export function usePokerGame(): UsePokerGameResult {
       const tx = await program.methods
         .showdown()
         .accounts({
-          authority: publicKey,
+          caller: publicKey,
           table: gameState.tablePDA,
           handState: handPDA,
           vault: vaultPDA,
@@ -675,13 +683,52 @@ export function usePokerGame(): UsePokerGameResult {
       await refreshState();
       return tx;
     } catch (e) {
-      const message = e instanceof Error ? e.message : "Showdown failed";
+      const message = parseAnchorError(e);
       setError(message);
       throw e;
     } finally {
       setLoading(false);
     }
   }, [program, provider, publicKey, gameState.tablePDA, gameState.table, refreshState]);
+
+  // Timeout a player who hasn't acted in time (anyone can call)
+  const timeoutPlayer = useCallback(async (): Promise<string> => {
+    if (!program || !provider || !publicKey || !gameState.tablePDA || !gameState.table || !gameState.handState) {
+      throw new Error("Table not ready");
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const handNumber = BigInt(gameState.table.handNumber.toNumber());
+      const [handPDA] = getHandPDA(gameState.tablePDA, handNumber);
+
+      // Get the seat of the player whose turn it is
+      const actionOn = gameState.handState.actionOn;
+      const [timedOutSeatPDA] = getSeatPDA(gameState.tablePDA, actionOn);
+
+      const tx = await program.methods
+        .timeoutPlayer()
+        .accounts({
+          caller: publicKey,
+          table: gameState.tablePDA,
+          handState: handPDA,
+          playerSeat: timedOutSeatPDA,
+        })
+        .rpc();
+
+      await provider.connection.confirmTransaction(tx, "confirmed");
+      await refreshState();
+      return tx;
+    } catch (e) {
+      const message = parseAnchorError(e);
+      setError(message);
+      throw e;
+    } finally {
+      setLoading(false);
+    }
+  }, [program, provider, publicKey, gameState.tablePDA, gameState.table, gameState.handState, refreshState]);
 
   return {
     gameState,
@@ -694,6 +741,7 @@ export function usePokerGame(): UsePokerGameResult {
     dealCards,
     playerAction,
     showdown,
+    timeoutPlayer,
     refreshState,
     setTableId,
   };

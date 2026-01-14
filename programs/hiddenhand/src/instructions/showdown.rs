@@ -7,14 +7,14 @@ use crate::state::{evaluate_hand, find_winners, GamePhase, HandState, PlayerSeat
 
 #[derive(Accounts)]
 pub struct Showdown<'info> {
+    /// Anyone can call showdown, but non-authority must wait for timeout
     #[account(mut)]
-    pub authority: Signer<'info>,
+    pub caller: Signer<'info>,
 
     #[account(
         mut,
         seeds = [TABLE_SEED, table.table_id.as_ref()],
-        bump = table.bump,
-        constraint = table.authority == authority.key() @ HiddenHandError::UnauthorizedAuthority
+        bump = table.bump
     )]
     pub table: Account<'info, Table>,
 
@@ -37,6 +37,22 @@ pub struct Showdown<'info> {
 pub fn handler(ctx: Context<Showdown>) -> Result<()> {
     let table = &mut ctx.accounts.table;
     let hand_state = &mut ctx.accounts.hand_state;
+    let caller = &ctx.accounts.caller;
+    let clock = Clock::get()?;
+
+    // Authorization check:
+    // - Authority can call showdown immediately
+    // - Anyone else can call after timeout (prevents authority from abandoning game)
+    let is_authority = table.authority == caller.key();
+
+    if !is_authority {
+        let elapsed = clock.unix_timestamp - hand_state.last_action_time;
+        require!(
+            elapsed >= ACTION_TIMEOUT_SECONDS,
+            HiddenHandError::UnauthorizedAuthority
+        );
+        msg!("Non-authority calling showdown after {} seconds timeout", elapsed);
+    }
 
     // Security: Check for duplicate accounts in remaining_accounts
     // This prevents an attacker from passing the same account twice to manipulate state
@@ -241,8 +257,9 @@ pub fn handler(ctx: Context<Showdown>) -> Result<()> {
     hand_state.phase = GamePhase::Settled;
     hand_state.pot = 0;
 
-    // Return table to waiting state
+    // Return table to waiting state and record time (for timeout fallback)
     table.status = TableStatus::Waiting;
+    table.last_ready_time = clock.unix_timestamp;
 
     msg!("Hand #{} complete", hand_state.hand_number);
 

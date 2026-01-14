@@ -5,16 +5,19 @@ use crate::constants::*;
 use crate::error::HiddenHandError;
 use crate::state::{DeckState, GamePhase, HandState, PlayerSeat, PlayerStatus, Table, TableStatus};
 
+/// Deal cards after VRF shuffle has completed
+/// This instruction distributes hole cards and posts blinds
+/// Use this after request_shuffle + callback_shuffle for provably fair games
 #[derive(Accounts)]
-pub struct DealAllCards<'info> {
-    /// Anyone can call, but non-authority must wait for timeout
+pub struct DealCardsVrf<'info> {
     #[account(mut)]
-    pub caller: Signer<'info>,
+    pub authority: Signer<'info>,
 
     #[account(
         mut,
         seeds = [TABLE_SEED, table.table_id.as_ref()],
-        bump = table.bump
+        bump = table.bump,
+        constraint = table.authority == authority.key() @ HiddenHandError::UnauthorizedAuthority
     )]
     pub table: Account<'info, Table>,
 
@@ -49,28 +52,15 @@ pub struct DealAllCards<'info> {
     pub bb_seat: Account<'info, PlayerSeat>,
 }
 
-/// Deal cards to all players and post blinds
-/// Authority can call immediately, anyone else must wait for timeout
+/// Deal hole cards to all players and post blinds (after VRF shuffle)
 /// remaining_accounts should contain all OTHER player seats (not SB/BB)
-pub fn handler(ctx: Context<DealAllCards>) -> Result<()> {
+pub fn handler(ctx: Context<DealCardsVrf>) -> Result<()> {
     let table = &ctx.accounts.table;
     let hand_state = &mut ctx.accounts.hand_state;
     let deck_state = &mut ctx.accounts.deck_state;
     let sb_seat = &mut ctx.accounts.sb_seat;
     let bb_seat = &mut ctx.accounts.bb_seat;
-    let caller = &ctx.accounts.caller;
     let clock = Clock::get()?;
-
-    // Authorization check: authority can call immediately, others must wait for timeout
-    let is_authority = table.authority == caller.key();
-    if !is_authority {
-        let elapsed = clock.unix_timestamp - hand_state.last_action_time;
-        require!(
-            elapsed >= ACTION_TIMEOUT_SECONDS,
-            HiddenHandError::UnauthorizedAuthority
-        );
-        msg!("Non-authority dealing cards after {} seconds timeout", elapsed);
-    }
 
     // Security: Check SB and BB are different accounts
     require!(
@@ -94,9 +84,10 @@ pub fn handler(ctx: Context<DealAllCards>) -> Result<()> {
         HiddenHandError::InvalidPhase
     );
 
+    // REQUIRE deck is already shuffled (by VRF)
     require!(
-        !deck_state.is_shuffled,
-        HiddenHandError::DeckAlreadyShuffled
+        deck_state.is_shuffled,
+        HiddenHandError::DeckNotShuffled
     );
 
     require!(
@@ -104,35 +95,8 @@ pub fn handler(ctx: Context<DealAllCards>) -> Result<()> {
         HiddenHandError::HandNotInProgress
     );
 
-    // Generate pseudorandom seed from slot hashes
-    // In production, this would use Inco's e_rand()
-    let slot_hash = clock.slot;
-    let mut seed = slot_hash;
-
-    // Fisher-Yates shuffle using slot as seed
-    let mut deck: [u8; 52] = core::array::from_fn(|i| i as u8);
-
-    for i in (1..52).rev() {
-        // Simple LCG PRNG: seed = (seed * 1103515245 + 12345) % 2^64
-        seed = seed.wrapping_mul(1103515245).wrapping_add(12345);
-        let j = (seed % (i as u64 + 1)) as usize;
-        deck.swap(i, j);
-    }
-
-    // Store shuffled deck as u128 (lower 8 bits = card value)
-    // In production, these would be encrypted Inco handles
-    for i in 0..52 {
-        deck_state.cards[i] = deck[i] as u128;
-    }
-    deck_state.is_shuffled = true;
-
-    // Store community cards in deck_state (first 5 cards)
-    // They remain hidden in hand_state until revealed during phase transitions
-    // Cards 0-4 are community cards, stored in deck_state.cards[0..5]
-    // hand_state.community_cards uses 255 to indicate hidden cards
-    hand_state.community_cards = vec![255, 255, 255, 255, 255];
-    hand_state.community_revealed = 0;
-    deck_state.deal_index = 5; // Community cards reserved at indices 0-4
+    // Read shuffled cards from deck_state
+    let deck: Vec<u8> = deck_state.cards.iter().map(|c| *c as u8).collect();
 
     // Track seat indices and active player count
     let sb_index = sb_seat.seat_index;
@@ -251,7 +215,7 @@ pub fn handler(ctx: Context<DealAllCards>) -> Result<()> {
     hand_state.all_in_players = 0; // No one is all-in yet
 
     msg!(
-        "Cards dealt. Pot: {}. Phase: PreFlop. Action on seat {}. Active players: {}",
+        "VRF-shuffled cards dealt. Pot: {}. Phase: PreFlop. Action on seat {}. Active players: {}",
         hand_state.pot,
         hand_state.action_on,
         active_count

@@ -70,11 +70,11 @@ pub struct HandState {
     /// Bitmap of players who are all-in
     pub all_in_players: u8,
 
-    /// Last action slot for timeout tracking
-    pub last_action_slot: u64,
+    /// Last action timestamp for timeout tracking (unix timestamp)
+    pub last_action_time: i64,
 
-    /// Slot when hand started
-    pub hand_start_slot: u64,
+    /// Timestamp when hand started (unix timestamp)
+    pub hand_start_time: i64,
 
     /// PDA bump
     pub bump: u8,
@@ -96,8 +96,8 @@ impl HandState {
         1 +  // acted_this_round
         1 +  // active_count
         1 +  // all_in_players
-        8 +  // last_action_slot
-        8 +  // hand_start_slot
+        8 +  // last_action_time (i64)
+        8 +  // hand_start_time (i64)
         1;   // bump
 
     /// Check if player is still active in hand

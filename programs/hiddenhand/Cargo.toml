@@ -21,10 +21,15 @@ custom-panic = []
 
 
 [dependencies]
-anchor-lang = "0.32.1"
+anchor-lang = { version = "0.32.1", features = ["init-if-needed"] }
 # anchor-spl = "0.32.1" - temporarily disabled due to toolchain compatibility
 # TODO: Add once Anchor toolchain supports edition2024
 # inco-lightning = { version = "0.1.4", features = ["cpi"] }
+
+# MagicBlock SDK for VRF (verifiable randomness) and Ephemeral Rollups (privacy)
+ephemeral-rollups-sdk = { version = "0.6.5", features = ["anchor", "disable-realloc"] }
+ephemeral-vrf-sdk = { version = "0.2.1", features = ["anchor"] }
+constant_time_eq = "=0.3.1"
 
 # Note: LiteSVM requires solana-sdk version matching anchor-lang's requirements
 # For now, we use standard Rust tests which don't need these dependencies

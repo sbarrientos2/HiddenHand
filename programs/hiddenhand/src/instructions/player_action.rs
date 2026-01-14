@@ -177,10 +177,10 @@ pub fn handler(ctx: Context<PlayerAction>, action: Action) -> Result<()> {
         hand_state.mark_all_in(player_seat.seat_index);
     }
 
-    // Mark player as acted
+    // Mark player as acted and update timeout timestamp
     hand_state.mark_acted(player_seat.seat_index);
     player_seat.has_acted = true;
-    hand_state.last_action_slot = clock.slot;
+    hand_state.last_action_time = clock.unix_timestamp;
 
     // Find next player who needs to act in this betting round
     // (active, not all-in, hasn't acted yet or needs to respond to a raise)

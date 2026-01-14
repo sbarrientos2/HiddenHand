@@ -6,20 +6,20 @@ use crate::state::{DeckState, GamePhase, HandState, PlayerSeat, PlayerStatus, Ta
 
 #[derive(Accounts)]
 pub struct StartHand<'info> {
+    /// Anyone can call, but non-authority must wait for timeout
     #[account(mut)]
-    pub authority: Signer<'info>,
+    pub caller: Signer<'info>,
 
     #[account(
         mut,
         seeds = [TABLE_SEED, table.table_id.as_ref()],
-        bump = table.bump,
-        constraint = table.authority == authority.key() @ HiddenHandError::UnauthorizedAuthority
+        bump = table.bump
     )]
     pub table: Account<'info, Table>,
 
     #[account(
         init,
-        payer = authority,
+        payer = caller,
         space = HandState::SIZE,
         seeds = [HAND_SEED, table.key().as_ref(), &(table.hand_number + 1).to_le_bytes()],
         bump
@@ -28,7 +28,7 @@ pub struct StartHand<'info> {
 
     #[account(
         init,
-        payer = authority,
+        payer = caller,
         space = DeckState::SIZE,
         seeds = [DECK_SEED, table.key().as_ref(), &(table.hand_number + 1).to_le_bytes()],
         bump
@@ -39,13 +39,22 @@ pub struct StartHand<'info> {
 }
 
 /// Start a new hand
-/// NOTE: This is a simplified version. Full implementation would:
-/// 1. Use Inco CPI to generate encrypted random values for shuffling
-/// 2. Deal encrypted cards to each player
-/// For now, we set up the hand state and deck structure
+/// Authority can call immediately, anyone else must wait for timeout
 pub fn handler(ctx: Context<StartHand>) -> Result<()> {
     let table = &mut ctx.accounts.table;
+    let caller = &ctx.accounts.caller;
     let clock = Clock::get()?;
+
+    // Authorization check: authority can call immediately, others must wait for timeout
+    let is_authority = table.authority == caller.key();
+    if !is_authority {
+        let elapsed = clock.unix_timestamp - table.last_ready_time;
+        require!(
+            elapsed >= ACTION_TIMEOUT_SECONDS,
+            HiddenHandError::UnauthorizedAuthority
+        );
+        msg!("Non-authority starting hand after {} seconds timeout", elapsed);
+    }
 
     // Validate enough players
     require!(
@@ -102,8 +111,8 @@ pub fn handler(ctx: Context<StartHand>) -> Result<()> {
     hand_state.acted_this_round = 0;
     hand_state.active_count = table.current_players;
     hand_state.all_in_players = 0; // No one is all-in at start
-    hand_state.last_action_slot = clock.slot;
-    hand_state.hand_start_slot = clock.slot;
+    hand_state.last_action_time = clock.unix_timestamp;
+    hand_state.hand_start_time = clock.unix_timestamp;
     hand_state.bump = ctx.bumps.hand_state;
 
     // Initialize deck state

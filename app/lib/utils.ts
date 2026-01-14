@@ -154,3 +154,83 @@ export function getOccupiedSeats(occupiedSeats: number, maxSeats: number = 6): n
 export function isPlayerActive(activePlayers: number, seatIndex: number): boolean {
   return (activePlayers & (1 << seatIndex)) !== 0;
 }
+
+/**
+ * Parse Anchor/Program errors into user-friendly messages
+ */
+export function parseAnchorError(error: unknown, context?: {
+  minBuyIn?: number;
+  maxBuyIn?: number;
+}): string {
+  const errorStr = error instanceof Error ? error.message : String(error);
+
+  // Map error codes to user-friendly messages
+  const errorMappings: Record<string, string | ((ctx?: typeof context) => string)> = {
+    "InvalidBuyIn": (ctx) => {
+      if (ctx?.minBuyIn && ctx?.maxBuyIn) {
+        return `Buy-in must be between ${formatSol(ctx.minBuyIn)} and ${formatSol(ctx.maxBuyIn)}`;
+      }
+      return "Buy-in amount is outside the allowed range for this table";
+    },
+    "TableFull": "This table is full. Please try another table.",
+    "NotEnoughPlayers": "Need at least 2 players to start a hand.",
+    "PlayerNotAtTable": "You are not seated at this table.",
+    "PlayerAlreadyAtTable": "You are already seated at this table.",
+    "InvalidSeatIndex": "Invalid seat selection.",
+    "SeatOccupied": "This seat is already taken. Please choose another.",
+    "SeatEmpty": "This seat is empty.",
+    "NotPlayersTurn": "It's not your turn to act.",
+    "InvalidAction": "This action is not valid right now.",
+    "InsufficientChips": "You don't have enough chips for this action.",
+    "HandNotInProgress": "No hand is currently in progress.",
+    "HandAlreadyInProgress": "A hand is already in progress.",
+    "CannotFold": "You cannot fold right now.",
+    "CannotCheck": "You cannot check - there's a bet to call.",
+    "RaiseTooSmall": "Raise amount is too small.",
+    "BettingRoundNotComplete": "The betting round is not complete yet.",
+    "InvalidPhase": "This action is not valid in the current game phase.",
+    "ActionTimeout": "Action timed out.",
+    "UnauthorizedAuthority": "Only the table creator can perform this action.",
+    "ShowdownRequiresPlayers": "Showdown requires at least 2 active players.",
+    "InvalidCardIndex": "Invalid card.",
+    "DeckAlreadyShuffled": "Cards have already been shuffled.",
+    "DeckNotShuffled": "Cards have not been shuffled yet.",
+    "ActionNotTimedOut": "Player hasn't timed out yet - wait 60 seconds.",
+    "CardsNotDealt": "Cards have not been dealt yet.",
+    "AllCardsRevealed": "All community cards are already revealed.",
+    "PlayerFolded": "You have already folded.",
+    "PlayerAlreadyAllIn": "You are already all-in.",
+    "TableNotWaiting": "Table is not in waiting state.",
+    "CannotLeaveDuringHand": "You cannot leave during an active hand.",
+    "Overflow": "Transaction calculation error.",
+    "DuplicateAccount": "Duplicate account error.",
+    "InvalidRemainingAccounts": "Invalid accounts provided.",
+  };
+
+  // Try to extract error code from message
+  for (const [code, message] of Object.entries(errorMappings)) {
+    if (errorStr.includes(code)) {
+      return typeof message === "function" ? message(context) : message;
+    }
+  }
+
+  // Check for common Solana/wallet errors
+  if (errorStr.includes("insufficient funds") || errorStr.includes("Insufficient")) {
+    return "Insufficient SOL in your wallet for this transaction.";
+  }
+  if (errorStr.includes("User rejected")) {
+    return "Transaction was cancelled.";
+  }
+  if (errorStr.includes("Blockhash not found")) {
+    return "Network error. Please try again.";
+  }
+
+  // Return a cleaned-up version of the original error
+  if (errorStr.length > 100) {
+    // Extract just the error message part
+    const match = errorStr.match(/Error Message: ([^.]+)/);
+    if (match) return match[1];
+  }
+
+  return errorStr;
+}

@@ -55,6 +55,9 @@ pub struct Table {
     /// Dealer button position (seat index)
     pub dealer_position: u8,
 
+    /// Timestamp when table became ready for new hand (for timeout fallback)
+    pub last_ready_time: i64,
+
     /// PDA bump
     pub bump: u8,
 }
@@ -73,6 +76,7 @@ impl Table {
         8 +  // hand_number
         1 +  // occupied_seats
         1 +  // dealer_position
+        8 +  // last_ready_time
         1;   // bump
 
     /// Check if a seat is occupied

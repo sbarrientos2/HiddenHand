@@ -5,12 +5,19 @@ pub mod state;
 
 use anchor_lang::prelude::*;
 
+// MagicBlock Ephemeral Rollups SDK for privacy
+use ephemeral_rollups_sdk::anchor::ephemeral;
+
 pub use constants::*;
 pub use instructions::*;
 pub use state::*;
 
 declare_id!("HS3GdhRBU3jMT4G6ogKVktKaibqsMhPRhDhNsmgzeB8Q");
 
+/// HiddenHand - Privacy Poker on Solana
+/// Using MagicBlock VRF for provably fair shuffling and
+/// Ephemeral Rollups for hidden game state
+#[ephemeral]
 #[program]
 pub mod hiddenhand {
     use super::*;
@@ -56,8 +63,58 @@ pub mod hiddenhand {
 
     /// Deal cards to all players and post blinds
     /// SB and BB seats are named accounts, others via remaining_accounts
+    /// NOTE: For provably fair games, use request_shuffle + callback_shuffle instead
     pub fn deal_cards(ctx: Context<DealAllCards>) -> Result<()> {
         instructions::deal_cards::handler(ctx)
+    }
+
+    // ============================================================
+    // MagicBlock VRF Instructions (Provably Fair Shuffling)
+    // ============================================================
+
+    /// Request VRF randomness for card shuffling
+    /// This initiates the shuffle - VRF oracle will callback with randomness
+    pub fn request_shuffle(ctx: Context<RequestShuffle>) -> Result<()> {
+        instructions::request_shuffle::handler(ctx)
+    }
+
+    /// VRF callback - receives randomness and shuffles the deck
+    /// Called by VRF oracle, not directly by users
+    pub fn callback_shuffle(ctx: Context<CallbackShuffle>, randomness: [u8; 32]) -> Result<()> {
+        instructions::callback_shuffle::handler(ctx, randomness)
+    }
+
+    /// Deal hole cards after VRF shuffle is complete
+    /// Use this instead of deal_cards for provably fair games
+    pub fn deal_cards_vrf(ctx: Context<DealCardsVrf>) -> Result<()> {
+        instructions::deal_cards_vrf::handler(ctx)
+    }
+
+    // ============================================================
+    // MagicBlock Ephemeral Rollup Instructions (Privacy)
+    // ============================================================
+
+    /// Delegate player seat to Ephemeral Rollup for private gameplay
+    /// Enables low-latency transactions and private hole cards
+    pub fn delegate_seat(ctx: Context<DelegateSeat>, seat_index: u8) -> Result<()> {
+        instructions::delegate_seat::handler(ctx, seat_index)
+    }
+
+    /// Undelegate player seat back to base layer
+    /// Commits final state (chips) after hand or when leaving
+    pub fn undelegate_seat(ctx: Context<UndelegateSeat>) -> Result<()> {
+        instructions::undelegate_seat::handler(ctx)
+    }
+
+    // ============================================================
+    // Timeout Handling (Prevents Stuck Games)
+    // ============================================================
+
+    /// Timeout a player who hasn't acted within 60 seconds
+    /// Anyone can call this to keep the game moving
+    /// Auto-checks if possible, otherwise auto-folds
+    pub fn timeout_player(ctx: Context<TimeoutPlayer>) -> Result<()> {
+        instructions::timeout_player::handler(ctx)
     }
 
     // TODO: Add these instructions once Inco integration is complete

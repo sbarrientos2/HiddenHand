@@ -654,7 +654,7 @@ describe("hiddenhand", () => {
       await program.methods
         .startHand()
         .accounts({
-          authority: authority.publicKey,
+          caller: authority.publicKey,
           table: tablePDA,
           handState: handPDA,
           deckState: deckPDA,
@@ -699,7 +699,7 @@ describe("hiddenhand", () => {
         await program.methods
           .startHand()
           .accounts({
-            authority: authority.publicKey,
+            caller: authority.publicKey,
             table: tablePDA,
             handState: handPDA,
             deckState: deckPDA,
@@ -749,7 +749,7 @@ describe("hiddenhand", () => {
         await program.methods
           .startHand()
           .accounts({
-            authority: player1.publicKey,
+            caller: player1.publicKey,
             table: tablePDA,
             handState: handPDA,
             deckState: deckPDA,
@@ -838,7 +838,7 @@ describe("hiddenhand", () => {
       await program.methods
         .startHand()
         .accounts({
-          authority: authority.publicKey,
+          caller: authority.publicKey,
           table: tablePDA,
           handState: handPDA,
           deckState: deckPDA,
@@ -909,6 +909,421 @@ describe("hiddenhand", () => {
 
     it.skip("advances phase when betting round complete", async () => {
       // Would need all players to act
+    });
+  });
+
+  describe("timeout_player", () => {
+    let tableId: number[];
+    let tablePDA: PublicKey;
+    let vaultPDA: PublicKey;
+    let authority: Keypair;
+    let player1: Keypair;
+    let player2: Keypair;
+    let seat0PDA: PublicKey;
+    let seat1PDA: PublicKey;
+    let handPDA: PublicKey;
+    let deckPDA: PublicKey;
+
+    beforeEach(async () => {
+      authority = await createFundedKeypair();
+      player1 = await createFundedKeypair();
+      player2 = await createFundedKeypair();
+
+      tableId = generateTableId();
+      [tablePDA] = getTablePDA(tableId);
+      [vaultPDA] = getVaultPDA(tablePDA);
+      [seat0PDA] = getSeatPDA(tablePDA, 0);
+      [seat1PDA] = getSeatPDA(tablePDA, 1);
+
+      // Create table
+      await program.methods
+        .createTable(
+          tableId,
+          new anchor.BN(SMALL_BLIND),
+          new anchor.BN(BIG_BLIND),
+          new anchor.BN(MIN_BUY_IN),
+          new anchor.BN(MAX_BUY_IN),
+          MAX_PLAYERS
+        )
+        .accounts({
+          authority: authority.publicKey,
+          table: tablePDA,
+          vault: vaultPDA,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([authority])
+        .rpc();
+
+      // Players join
+      await program.methods
+        .joinTable(0, new anchor.BN(MIN_BUY_IN))
+        .accounts({
+          player: player1.publicKey,
+          table: tablePDA,
+          playerSeat: seat0PDA,
+          vault: vaultPDA,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([player1])
+        .rpc();
+
+      await program.methods
+        .joinTable(1, new anchor.BN(MIN_BUY_IN))
+        .accounts({
+          player: player2.publicKey,
+          table: tablePDA,
+          playerSeat: seat1PDA,
+          vault: vaultPDA,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([player2])
+        .rpc();
+
+      // Start hand
+      [handPDA] = getHandPDA(tablePDA, 1);
+      [deckPDA] = getDeckPDA(tablePDA, 1);
+
+      await program.methods
+        .startHand()
+        .accounts({
+          caller: authority.publicKey,
+          table: tablePDA,
+          handState: handPDA,
+          deckState: deckPDA,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([authority])
+        .rpc();
+
+      // Deal cards to transition to PreFlop
+      // In 2-player game: seat 0 is SB (dealer), seat 1 is BB
+      // After deal, action is on SB (seat 0) since BB already posted
+      await program.methods
+        .dealCards()
+        .accounts({
+          caller: authority.publicKey,
+          table: tablePDA,
+          handState: handPDA,
+          deckState: deckPDA,
+          sbSeat: seat0PDA,
+          bbSeat: seat1PDA,
+        })
+        .signers([authority])
+        .rpc();
+    });
+
+    it("fails when player has not timed out yet", async () => {
+      // Get current hand state to find who has action
+      const handState = await program.account.handState.fetch(handPDA);
+      expect(handState.phase).to.deep.equal({ preFlop: {} });
+
+      const actionOnSeat = handState.actionOn;
+      const timedOutSeatPDA = actionOnSeat === 0 ? seat0PDA : seat1PDA;
+
+      // Any user can call timeout, let's use the other player
+      const caller = actionOnSeat === 0 ? player2 : player1;
+
+      // Try to timeout immediately (should fail - 60 seconds haven't passed)
+      try {
+        await program.methods
+          .timeoutPlayer()
+          .accounts({
+            caller: caller.publicKey,
+            table: tablePDA,
+            handState: handPDA,
+            playerSeat: timedOutSeatPDA,
+          })
+          .signers([caller])
+          .rpc();
+        expect.fail("Should have thrown ActionNotTimedOut error");
+      } catch (err: any) {
+        expect(err.error.errorCode.code).to.equal("ActionNotTimedOut");
+      }
+    });
+
+    it("fails when targeting wrong player (not their turn)", async () => {
+      const handState = await program.account.handState.fetch(handPDA);
+      const actionOnSeat = handState.actionOn;
+
+      // Try to timeout the player who does NOT have action
+      const wrongSeatPDA = actionOnSeat === 0 ? seat1PDA : seat0PDA;
+      const caller = player1;
+
+      try {
+        await program.methods
+          .timeoutPlayer()
+          .accounts({
+            caller: caller.publicKey,
+            table: tablePDA,
+            handState: handPDA,
+            playerSeat: wrongSeatPDA,
+          })
+          .signers([caller])
+          .rpc();
+        expect.fail("Should have thrown NotPlayersTurn error");
+      } catch (err: any) {
+        expect(err.error.errorCode.code).to.equal("NotPlayersTurn");
+      }
+    });
+
+    it("anyone can call timeout (not just authority)", async () => {
+      // This test verifies the caller doesn't need to be authority
+      // The actual timeout still fails because 60 seconds haven't passed
+      // but it proves the instruction accepts any signer
+      const handState = await program.account.handState.fetch(handPDA);
+      const actionOnSeat = handState.actionOn;
+      const timedOutSeatPDA = actionOnSeat === 0 ? seat0PDA : seat1PDA;
+
+      // Use a random third party (not authority, not either player)
+      const randomCaller = await createFundedKeypair();
+
+      try {
+        await program.methods
+          .timeoutPlayer()
+          .accounts({
+            caller: randomCaller.publicKey,
+            table: tablePDA,
+            handState: handPDA,
+            playerSeat: timedOutSeatPDA,
+          })
+          .signers([randomCaller])
+          .rpc();
+        expect.fail("Should have thrown ActionNotTimedOut error");
+      } catch (err: any) {
+        // We expect ActionNotTimedOut (not UnauthorizedAuthority)
+        // This proves the random caller was accepted
+        expect(err.error.errorCode.code).to.equal("ActionNotTimedOut");
+      }
+    });
+
+    it("verifies last_action_time is set after deal_cards", async () => {
+      const handState = await program.account.handState.fetch(handPDA);
+
+      // last_action_time should be set to a recent timestamp
+      const lastActionTime = handState.lastActionTime.toNumber();
+      const now = Math.floor(Date.now() / 1000);
+
+      // Should be within the last 60 seconds (test execution time)
+      expect(lastActionTime).to.be.greaterThan(now - 60);
+      expect(lastActionTime).to.be.lessThanOrEqual(now + 5); // Allow small clock drift
+    });
+
+    // Note: The following tests document expected behavior but require time manipulation
+    // which is not easily achievable in solana-test-validator
+
+    it.skip("auto-checks when player has no bet to call (after 60s)", async () => {
+      // Expected behavior when timeout IS valid:
+      // - If current_bet <= player's current_bet, player auto-checks
+      // - Action moves to next player
+      // - Player remains in hand
+    });
+
+    it.skip("auto-folds when player has bet to call (after 60s)", async () => {
+      // Expected behavior when timeout IS valid:
+      // - If current_bet > player's current_bet, player auto-folds
+      // - Player is marked as folded
+      // - If only 1 player remains, hand goes to Showdown
+    });
+
+    it.skip("updates last_action_time after timeout", async () => {
+      // After successful timeout:
+      // - last_action_time should be updated to current time
+      // - This resets the timer for the next player
+    });
+  });
+
+  describe("showdown authorization", () => {
+    let tableId: number[];
+    let tablePDA: PublicKey;
+    let vaultPDA: PublicKey;
+    let authority: Keypair;
+    let player1: Keypair;
+    let player2: Keypair;
+    let seat0PDA: PublicKey;
+    let seat1PDA: PublicKey;
+    let handPDA: PublicKey;
+    let deckPDA: PublicKey;
+
+    beforeEach(async () => {
+      authority = await createFundedKeypair();
+      player1 = await createFundedKeypair();
+      player2 = await createFundedKeypair();
+
+      tableId = generateTableId();
+      [tablePDA] = getTablePDA(tableId);
+      [vaultPDA] = getVaultPDA(tablePDA);
+      [seat0PDA] = getSeatPDA(tablePDA, 0);
+      [seat1PDA] = getSeatPDA(tablePDA, 1);
+
+      // Create table
+      await program.methods
+        .createTable(
+          tableId,
+          new anchor.BN(SMALL_BLIND),
+          new anchor.BN(BIG_BLIND),
+          new anchor.BN(MIN_BUY_IN),
+          new anchor.BN(MAX_BUY_IN),
+          MAX_PLAYERS
+        )
+        .accounts({
+          authority: authority.publicKey,
+          table: tablePDA,
+          vault: vaultPDA,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([authority])
+        .rpc();
+
+      // Players join
+      await program.methods
+        .joinTable(0, new anchor.BN(MIN_BUY_IN))
+        .accounts({
+          player: player1.publicKey,
+          table: tablePDA,
+          playerSeat: seat0PDA,
+          vault: vaultPDA,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([player1])
+        .rpc();
+
+      await program.methods
+        .joinTable(1, new anchor.BN(MIN_BUY_IN))
+        .accounts({
+          player: player2.publicKey,
+          table: tablePDA,
+          playerSeat: seat1PDA,
+          vault: vaultPDA,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([player2])
+        .rpc();
+
+      // Start hand and deal cards
+      [handPDA] = getHandPDA(tablePDA, 1);
+      [deckPDA] = getDeckPDA(tablePDA, 1);
+
+      await program.methods
+        .startHand()
+        .accounts({
+          caller: authority.publicKey,
+          table: tablePDA,
+          handState: handPDA,
+          deckState: deckPDA,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([authority])
+        .rpc();
+
+      await program.methods
+        .dealCards()
+        .accounts({
+          caller: authority.publicKey,
+          table: tablePDA,
+          handState: handPDA,
+          deckState: deckPDA,
+          sbSeat: seat0PDA,
+          bbSeat: seat1PDA,
+        })
+        .signers([authority])
+        .rpc();
+    });
+
+    it("non-authority fails to call showdown before timeout", async () => {
+      // First, have player1 fold so we can reach showdown with 1 player
+      const handState = await program.account.handState.fetch(handPDA);
+      const actionOnSeat = handState.actionOn;
+      const actionPlayer = actionOnSeat === 0 ? player1 : player2;
+      const actionSeatPDA = actionOnSeat === 0 ? seat0PDA : seat1PDA;
+
+      // Fold to trigger showdown
+      await program.methods
+        .playerAction({ fold: {} })
+        .accounts({
+          player: actionPlayer.publicKey,
+          table: tablePDA,
+          handState: handPDA,
+          deckState: deckPDA,
+          playerSeat: actionSeatPDA,
+        })
+        .signers([actionPlayer])
+        .rpc();
+
+      // Verify we're in showdown/settled phase
+      const updatedHandState = await program.account.handState.fetch(handPDA);
+      expect(updatedHandState.activeCount).to.equal(1);
+
+      // Non-authority tries to call showdown immediately (should fail)
+      const nonAuthority = player1;
+
+      try {
+        await program.methods
+          .showdown()
+          .accounts({
+            caller: nonAuthority.publicKey,
+            table: tablePDA,
+            handState: handPDA,
+            vault: vaultPDA,
+          })
+          .remainingAccounts([
+            { pubkey: seat0PDA, isSigner: false, isWritable: true },
+            { pubkey: seat1PDA, isSigner: false, isWritable: true },
+          ])
+          .signers([nonAuthority])
+          .rpc();
+        expect.fail("Should have thrown UnauthorizedAuthority error");
+      } catch (err: any) {
+        expect(err.error.errorCode.code).to.equal("UnauthorizedAuthority");
+      }
+    });
+
+    it("authority can call showdown immediately", async () => {
+      // Fold to trigger single winner situation
+      const handState = await program.account.handState.fetch(handPDA);
+      const actionOnSeat = handState.actionOn;
+      const actionPlayer = actionOnSeat === 0 ? player1 : player2;
+      const actionSeatPDA = actionOnSeat === 0 ? seat0PDA : seat1PDA;
+
+      await program.methods
+        .playerAction({ fold: {} })
+        .accounts({
+          player: actionPlayer.publicKey,
+          table: tablePDA,
+          handState: handPDA,
+          deckState: deckPDA,
+          playerSeat: actionSeatPDA,
+        })
+        .signers([actionPlayer])
+        .rpc();
+
+      // Authority should be able to call showdown immediately
+      const tx = await program.methods
+        .showdown()
+        .accounts({
+          caller: authority.publicKey,
+          table: tablePDA,
+          handState: handPDA,
+          vault: vaultPDA,
+        })
+        .remainingAccounts([
+          { pubkey: seat0PDA, isSigner: false, isWritable: true },
+          { pubkey: seat1PDA, isSigner: false, isWritable: true },
+        ])
+        .signers([authority])
+        .rpc();
+
+      expect(tx).to.be.a("string");
+
+      // Verify hand is settled
+      const finalHandState = await program.account.handState.fetch(handPDA);
+      expect(finalHandState.phase).to.deep.equal({ settled: {} });
+    });
+
+    it.skip("non-authority can call showdown after 60s timeout", async () => {
+      // Expected behavior:
+      // - After 60 seconds in Showdown phase
+      // - Any player can call showdown to finish the game
+      // - This prevents authority from abandoning the game
     });
   });
 });

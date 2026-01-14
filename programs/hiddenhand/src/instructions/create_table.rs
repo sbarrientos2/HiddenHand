@@ -60,6 +60,7 @@ pub fn handler(
     );
 
     let table = &mut ctx.accounts.table;
+    let clock = Clock::get()?;
 
     table.authority = ctx.accounts.authority.key();
     table.table_id = table_id;
@@ -73,6 +74,7 @@ pub fn handler(
     table.hand_number = 0;
     table.occupied_seats = 0;
     table.dealer_position = 0;
+    table.last_ready_time = clock.unix_timestamp;
     table.bump = ctx.bumps.table;
 
     msg!("Table created: {:?}", table_id);

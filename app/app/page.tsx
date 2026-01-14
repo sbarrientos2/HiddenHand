@@ -6,6 +6,8 @@ import { PokerTable } from "@/components/PokerTable";
 import { ActionPanel } from "@/components/ActionPanel";
 import { useState, useEffect } from "react";
 import { usePokerGame, type ActionType } from "@/hooks/usePokerGame";
+import { ActionTimer } from "@/components/ActionTimer";
+import { OpponentTimer } from "@/components/OpponentTimer";
 import { NETWORK } from "@/contexts/WalletProvider";
 import { solToLamports, lamportsToSol } from "@/lib/utils";
 
@@ -22,6 +24,7 @@ export default function Home() {
     dealCards,
     playerAction,
     showdown,
+    timeoutPlayer,
     setTableId,
   } = usePokerGame();
 
@@ -44,6 +47,17 @@ export default function Home() {
       setTableId(tableIdInput);
     }
   }, [tableIdInput, setTableId]);
+
+  // Auto-set buy-in to table minimum when table loads
+  useEffect(() => {
+    if (gameState.table) {
+      const minBuyIn = lamportsToSol(gameState.table.minBuyIn.toNumber());
+      // Set to min buy-in if current value is below minimum
+      if (buyInSol < minBuyIn) {
+        setBuyInSol(minBuyIn);
+      }
+    }
+  }, [gameState.table, buyInSol]);
 
   // Find current player info
   const currentPlayer = gameState.players.find(
@@ -290,9 +304,17 @@ export default function Home() {
                       </span>
                     </div>
 
+                    {/* Table Info - Buy-in Range */}
+                    <div className="glass-dark px-4 py-2 rounded-xl text-sm flex items-center gap-2">
+                      <span className="text-[var(--text-muted)]">Buy-in:</span>
+                      <span className="text-[var(--text-primary)] font-medium">
+                        {lamportsToSol(gameState.table.minBuyIn.toNumber())} - {lamportsToSol(gameState.table.maxBuyIn.toNumber())} SOL
+                      </span>
+                    </div>
+
                     {/* Join if not at table */}
                     {!currentPlayer && gameState.tableStatus === "Waiting" && (
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-3 flex-wrap">
                         <select
                           value={selectedSeat ?? ""}
                           onChange={(e) =>
@@ -325,11 +347,17 @@ export default function Home() {
                         </div>
                         <button
                           onClick={handleJoinTable}
-                          disabled={loading || selectedSeat === null}
+                          disabled={loading || selectedSeat === null || buyInSol < lamportsToSol(gameState.table.minBuyIn.toNumber()) || buyInSol > lamportsToSol(gameState.table.maxBuyIn.toNumber())}
                           className="btn-info px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50"
                         >
                           Join
                         </button>
+                        {/* Warning if buy-in out of range */}
+                        {(buyInSol < lamportsToSol(gameState.table.minBuyIn.toNumber()) || buyInSol > lamportsToSol(gameState.table.maxBuyIn.toNumber())) && (
+                          <span className="text-[var(--status-warning)] text-xs">
+                            Buy-in must be {lamportsToSol(gameState.table.minBuyIn.toNumber())} - {lamportsToSol(gameState.table.maxBuyIn.toNumber())} SOL
+                          </span>
+                        )}
                       </div>
                     )}
 
@@ -491,7 +519,35 @@ export default function Home() {
 
             {/* Action panel */}
             {currentPlayer && gameState.tableStatus === "Playing" && (
-              <div className="max-w-lg mx-auto">
+              <div className="max-w-lg mx-auto space-y-4">
+                {/* Timer - shows when it's player's turn */}
+                {isPlayerTurn && (
+                  <div className="flex justify-center">
+                    <div className="glass-dark rounded-2xl px-6 py-4">
+                      <ActionTimer
+                        lastActionTime={gameState.lastActionTime}
+                        isPlayerTurn={isPlayerTurn ?? false}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Opponent timer - shows when waiting for another player */}
+                {!isPlayerTurn && gameState.lastActionTime && (
+                  <OpponentTimer
+                    lastActionTime={gameState.lastActionTime}
+                    actionOn={gameState.actionOn}
+                    onTimeout={async () => {
+                      try {
+                        await timeoutPlayer();
+                      } catch (e) {
+                        console.error("Timeout failed:", e);
+                      }
+                    }}
+                    isLoading={loading}
+                  />
+                )}
+
                 <ActionPanel
                   isPlayerTurn={isPlayerTurn ?? false}
                   canCheck={canCheck}
@@ -705,12 +761,12 @@ export default function Home() {
           </a>
           {" "}with{" "}
           <a
-            href="https://inco.org"
-            className="text-[var(--status-info)] hover:text-blue-300 transition-colors"
+            href="https://magicblock.gg"
+            className="text-purple-400 hover:text-purple-300 transition-colors"
             target="_blank"
             rel="noopener noreferrer"
           >
-            Inco Lightning
+            MagicBlock
           </a>
         </p>
       </footer>

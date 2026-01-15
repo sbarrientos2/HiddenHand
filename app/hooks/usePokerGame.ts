@@ -19,6 +19,25 @@ import {
   isAccountDelegated,
   isAccountDelegatedByOwner,
 } from "@/lib/magicblock";
+
+// Inco Lightning FHE Program ID
+const INCO_PROGRAM_ID = new PublicKey("5sjEbPiqgZrYwR31ahR6Uk9wf5awoX61YGg7jExQSwaj");
+
+// Derive Inco allowance PDA from encrypted handle
+// Seeds: [handle_le_bytes, player_pubkey] (NO "allowance" prefix!)
+function getIncoAllowancePDA(handle: bigint, playerPubkey: PublicKey): [PublicKey, number] {
+  // Convert BigInt handle to 16-byte little-endian buffer
+  const handleBuf = Buffer.alloc(16);
+  let h = handle;
+  for (let i = 0; i < 16; i++) {
+    handleBuf[i] = Number(h & BigInt(0xFF));
+    h >>= BigInt(8);
+  }
+  return PublicKey.findProgramAddressSync(
+    [handleBuf, playerPubkey.toBuffer()],
+    INCO_PROGRAM_ID
+  );
+}
 import {
   mapPlayerStatus,
   mapGamePhase,
@@ -162,6 +181,11 @@ export interface UsePokerGameResult {
   undelegateHand: () => Promise<string>;
   undelegateDeck: () => Promise<string>;
   undelegateGameState: () => Promise<void>; // Undelegates all game accounts
+
+  // Inco FHE Encryption Actions
+  encryptHoleCards: (seatIndex: number) => Promise<string>; // Phase 1: Encrypt cards
+  grantCardAllowance: (seatIndex: number) => Promise<string>; // Phase 2: Grant decryption
+  encryptAndGrantCards: (seatIndex: number) => Promise<void>; // Combined helper
 
   // Utilities
   refreshState: () => Promise<void>;
@@ -380,7 +404,7 @@ export function usePokerGame(): UsePokerGameResult {
     }
 
     // Use ER if we detected delegation OR if local state says delegated
-    const useER = (detectedDelegation || gameState.isGameDelegated) && erProgram;
+    const useER = (detectedDelegation || gameState.isGameDelegated) && !!erProgram;
     const activeProgram = useER ? erProgram : program;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1308,6 +1332,132 @@ export function usePokerGame(): UsePokerGameResult {
     }
   }, [erProgram, erProvider, publicKey, gameState.tablePDA, gameState.table, undelegateHand, undelegateDeck, refreshState]);
 
+  // ============================================================
+  // Inco FHE: Phase 1 - Encrypt hole cards (stores handles)
+  // ============================================================
+  const encryptHoleCards = useCallback(async (seatIndex: number): Promise<string> => {
+    if (!program || !provider || !publicKey || !gameState.tablePDA || !gameState.table) {
+      throw new Error("Table not ready");
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const handNumber = BigInt(gameState.table.handNumber.toNumber());
+      const [handPDA] = getHandPDA(gameState.tablePDA, handNumber);
+      const [seatPDA] = getSeatPDA(gameState.tablePDA, seatIndex);
+
+      console.log(`Encrypting hole cards for seat ${seatIndex} via Inco FHE...`);
+
+      const tx = await program.methods
+        .encryptHoleCards(seatIndex)
+        .accounts({
+          authority: publicKey,
+          table: gameState.tablePDA,
+          handState: handPDA,
+          playerSeat: seatPDA,
+          incoProgram: INCO_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc();
+
+      await provider.connection.confirmTransaction(tx, "confirmed");
+      console.log("Phase 1 complete - cards encrypted:", tx);
+      await refreshState();
+      return tx;
+    } catch (e) {
+      const message = parseAnchorError(e);
+      setError(message);
+      throw e;
+    } finally {
+      setLoading(false);
+    }
+  }, [program, provider, publicKey, gameState.tablePDA, gameState.table, refreshState]);
+
+  // ============================================================
+  // Inco FHE: Phase 2 - Grant decryption allowance
+  // Must be called AFTER encryptHoleCards to have valid handles
+  // ============================================================
+  const grantCardAllowance = useCallback(async (seatIndex: number): Promise<string> => {
+    if (!program || !provider || !publicKey || !gameState.tablePDA || !gameState.table) {
+      throw new Error("Table not ready");
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const [seatPDA] = getSeatPDA(gameState.tablePDA, seatIndex);
+
+      // Fetch the seat to get the encrypted handles
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const accounts = program.account as any;
+      const seat = await accounts.playerSeat.fetch(seatPDA) as PlayerSeatAccount;
+
+      const handle1 = BigInt(seat.holeCard1.toString());
+      const handle2 = BigInt(seat.holeCard2.toString());
+
+      // Verify cards are actually encrypted (handles > 51)
+      if (handle1 <= BigInt(51) || handle2 <= BigInt(51)) {
+        throw new Error("Cards not encrypted yet. Call encryptHoleCards first.");
+      }
+
+      // Derive allowance PDAs from the encrypted handles
+      const [allowancePDA1] = getIncoAllowancePDA(handle1, seat.player);
+      const [allowancePDA2] = getIncoAllowancePDA(handle2, seat.player);
+
+      console.log(`Granting decryption allowances for seat ${seatIndex}...`);
+      console.log(`  Handle 1: ${handle1.toString()}`);
+      console.log(`  Handle 2: ${handle2.toString()}`);
+      console.log(`  Allowance PDA 1: ${allowancePDA1.toString()}`);
+      console.log(`  Allowance PDA 2: ${allowancePDA2.toString()}`);
+
+      const tx = await program.methods
+        .grantCardAllowance(seatIndex)
+        .accounts({
+          authority: publicKey,
+          table: gameState.tablePDA,
+          playerSeat: seatPDA,
+          allowanceCard1: allowancePDA1,
+          allowanceCard2: allowancePDA2,
+          player: seat.player,
+          incoProgram: INCO_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc();
+
+      await provider.connection.confirmTransaction(tx, "confirmed");
+      console.log("Phase 2 complete - allowances granted:", tx);
+      await refreshState();
+      return tx;
+    } catch (e) {
+      const message = parseAnchorError(e);
+      setError(message);
+      throw e;
+    } finally {
+      setLoading(false);
+    }
+  }, [program, provider, publicKey, gameState.tablePDA, gameState.table, refreshState]);
+
+  // ============================================================
+  // Inco FHE: Combined helper - Encrypt + Grant in sequence
+  // ============================================================
+  const encryptAndGrantCards = useCallback(async (seatIndex: number): Promise<void> => {
+    console.log(`Starting Inco encryption for seat ${seatIndex}...`);
+
+    // Phase 1: Encrypt
+    await encryptHoleCards(seatIndex);
+
+    // Small delay to ensure state propagates
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    // Phase 2: Grant allowance
+    await grantCardAllowance(seatIndex);
+
+    console.log(`Inco encryption complete for seat ${seatIndex}!`);
+  }, [encryptHoleCards, grantCardAllowance]);
+
   // Player action (routes through ER when delegated for low latency)
   const playerAction = useCallback(
     async (action: ActionType): Promise<string> => {
@@ -1608,6 +1758,10 @@ export function usePokerGame(): UsePokerGameResult {
     undelegateHand,
     undelegateDeck,
     undelegateGameState,
+    // Inco FHE Encryption
+    encryptHoleCards,
+    grantCardAllowance,
+    encryptAndGrantCards,
     // Utilities
     refreshState,
     setTableId,

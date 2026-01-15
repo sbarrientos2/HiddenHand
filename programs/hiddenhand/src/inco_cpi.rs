@@ -47,11 +47,10 @@ mod discriminators {
 }
 
 /// Derive the allowance account PDA for a given handle and allowed address
-/// Seeds: ["allowance", handle_bytes, allowed_address]
+/// Seeds: [handle_bytes, allowed_address] (NO "allowance" prefix!)
 pub fn derive_allowance_account(handle: u128, allowed_address: &Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(
         &[
-            b"allowance",
             &handle.to_le_bytes(),
             allowed_address.as_ref(),
         ],

@@ -147,12 +147,21 @@ pub mod hiddenhand {
     // Inco Encryption Instructions (Phase 2 - Cryptographic Privacy)
     // ============================================================
 
-    /// Encrypt hole cards using Inco FHE
+    /// Phase 1: Encrypt hole cards using Inco FHE
     /// Called via Magic Actions after ER commit
-    /// Encrypts plaintext cards and grants decryption allowances to players
+    /// Encrypts plaintext cards and stores handles in PlayerSeat
     /// Call once per player with their seat_index
+    /// IMPORTANT: After this, call grant_card_allowance to enable decryption
     pub fn encrypt_hole_cards(ctx: Context<EncryptHoleCards>, seat_index: u8) -> Result<()> {
         instructions::encrypt_hole_cards::handler(ctx, seat_index)
+    }
+
+    /// Phase 2: Grant decryption allowance for encrypted cards
+    /// Must be called AFTER encrypt_hole_cards
+    /// Client should derive allowance PDAs from stored handles:
+    ///   PDA = ["allowance", handle.to_le_bytes(), player_pubkey]
+    pub fn grant_card_allowance(ctx: Context<GrantCardAllowance>, seat_index: u8) -> Result<()> {
+        instructions::encrypt_hole_cards::grant_allowance_handler(ctx, seat_index)
     }
 
     // TODO: Add community card reveal instruction

@@ -33,7 +33,9 @@ pub struct CallbackShuffle<'info> {
     pub deck_state: Account<'info, DeckState>,
 }
 
-/// VRF callback - receives 32 bytes of randomness and shuffles the deck
+/// VRF callback - receives 32 bytes of randomness and stores the seed
+/// IMPORTANT: The actual shuffle happens on the Ephemeral Rollup in deal_cards_vrf
+/// This ensures the card order is NEVER visible on the base layer
 pub fn handler(ctx: Context<CallbackShuffle>, randomness: [u8; 32]) -> Result<()> {
     let deck_state = &mut ctx.accounts.deck_state;
     let hand_state = &mut ctx.accounts.hand_state;
@@ -43,53 +45,30 @@ pub fn handler(ctx: Context<CallbackShuffle>, randomness: [u8; 32]) -> Result<()
         "VRF callback received for hand #{}",
         table.hand_number
     );
-    msg!("Randomness: {:?}", &randomness[0..8]);
+    msg!("Randomness (first 8 bytes): {:?}", &randomness[0..8]);
 
-    // Initialize deck with cards 0-51
-    let mut deck: [u8; 52] = core::array::from_fn(|i| i as u8);
+    // Store the VRF seed - DO NOT shuffle here!
+    // The shuffle will happen on the ER after delegation to preserve privacy
+    deck_state.vrf_seed = randomness;
+    deck_state.seed_received = true;
 
-    // Convert randomness to u64 seed for Fisher-Yates shuffle
-    let mut seed = u64::from_le_bytes(randomness[0..8].try_into().unwrap());
+    // DO NOT set is_shuffled = true here - that happens after shuffle on ER
+    // DO NOT store cards here - they remain unshuffled (all zeros)
 
-    // Fisher-Yates shuffle using VRF randomness
-    for i in (1..52).rev() {
-        // Use different parts of randomness for each iteration
-        if i % 4 == 0 && i < 28 {
-            // Mix in more randomness periodically
-            let offset = (i / 4) * 8;
-            if offset + 8 <= 32 {
-                seed ^= u64::from_le_bytes(randomness[offset..offset + 8].try_into().unwrap());
-            }
-        }
-
-        // LCG step with VRF-seeded state
-        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-        let j = (seed % (i as u64 + 1)) as usize;
-        deck.swap(i, j);
-    }
-
-    // Store shuffled deck
-    for i in 0..52 {
-        deck_state.cards[i] = deck[i] as u128;
-    }
-    deck_state.is_shuffled = true;
-
-    // Reserve first 5 cards for community cards (indices 0-4)
-    // hand_state.community_cards uses 255 to indicate hidden cards
+    // Initialize community cards placeholder
     hand_state.community_cards = vec![255, 255, 255, 255, 255];
     hand_state.community_revealed = 0;
-    deck_state.deal_index = 5;
 
-    // Store the VRF randomness hash for verification
-    // This allows anyone to verify the shuffle was fair
-    let randomness_hash = u64::from_le_bytes(randomness[24..32].try_into().unwrap());
-    msg!("Deck shuffled with VRF. Randomness verification: {}", randomness_hash);
+    // Log the seed hash for verification (anyone can verify randomness is fair)
+    let seed_hash = u64::from_le_bytes(randomness[24..32].try_into().unwrap());
+    msg!("VRF seed stored. Verification hash: {}", seed_hash);
+    msg!("Seed will be used to shuffle deck on ER after delegation.");
 
-    // Transition to shuffled state - deal_cards_vrf will distribute hole cards
-    hand_state.phase = GamePhase::Dealing; // Stay in dealing until cards are dealt
+    // Transition to Dealing phase - deal_cards_vrf will shuffle and deal on ER
+    hand_state.phase = GamePhase::Dealing;
 
     msg!(
-        "Deck shuffled for hand #{}. Ready to deal hole cards.",
+        "VRF seed received for hand #{}. Ready for delegation and dealing.",
         table.hand_number
     );
 

@@ -13,10 +13,17 @@ pub mod deal_cards_vrf;
 
 // MagicBlock Ephemeral Rollup delegation for privacy
 pub mod delegate_seat;
+pub mod delegate_hand;
+pub mod delegate_deck;
 pub mod undelegate_seat;
+pub mod undelegate_hand;
+pub mod undelegate_deck;
 
 // Timeout handling
 pub mod timeout_player;
+
+// Inco encryption (Phase 2)
+pub mod encrypt_hole_cards;
 
 // Re-export everything for convenience
 // The `handler` name conflicts are expected and handled by Anchor's program macro
@@ -43,6 +50,16 @@ pub use deal_cards_vrf::*;
 #[allow(ambiguous_glob_reexports)]
 pub use delegate_seat::*;
 #[allow(ambiguous_glob_reexports)]
+pub use delegate_hand::*;
+#[allow(ambiguous_glob_reexports)]
+pub use delegate_deck::*;
+#[allow(ambiguous_glob_reexports)]
 pub use undelegate_seat::*;
 #[allow(ambiguous_glob_reexports)]
+pub use undelegate_hand::*;
+#[allow(ambiguous_glob_reexports)]
+pub use undelegate_deck::*;
+#[allow(ambiguous_glob_reexports)]
 pub use timeout_player::*;
+#[allow(ambiguous_glob_reexports)]
+pub use encrypt_hole_cards::*;

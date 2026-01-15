@@ -73,8 +73,8 @@ impl PlayerSeat {
     pub fn reset_for_new_hand(&mut self) {
         self.current_bet = 0;
         self.total_bet_this_hand = 0;
-        self.hole_card_1 = 0;
-        self.hole_card_2 = 0;
+        self.hole_card_1 = 255; // Sentinel: not dealt yet
+        self.hole_card_2 = 255; // Sentinel: not dealt yet
         self.status = PlayerStatus::Playing;
         self.has_acted = false;
     }

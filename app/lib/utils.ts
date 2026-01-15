@@ -226,12 +226,27 @@ export function parseAnchorError(error: unknown, context?: {
     return "WALLET_DISCONNECTED:Wallet session expired. Please disconnect and reconnect your wallet.";
   }
 
-  // Check for common Solana/wallet errors
+  // Check for common Solana/wallet errors - insufficient funds
   if (errorStr.includes("insufficient funds") || errorStr.includes("Insufficient")) {
     return "Insufficient SOL in your wallet for this transaction.";
   }
+
+  // Check for specific insufficient lamports error (from transfer/buy-in)
+  const lamportsMatch = errorStr.match(/insufficient lamports (\d+), need (\d+)/);
+  if (lamportsMatch) {
+    const have = parseInt(lamportsMatch[1], 10);
+    const need = parseInt(lamportsMatch[2], 10);
+    const shortfall = (need - have) / LAMPORTS_PER_SOL;
+    return `Insufficient SOL for buy-in. You need ${shortfall.toFixed(3)} more SOL in your wallet.`;
+  }
   if (errorStr.includes("User rejected")) {
     return "Transaction was cancelled.";
+  }
+
+  // Check for delegation-related errors
+  if (errorStr.includes("writable account that cannot be written") ||
+      errorStr.includes("AccountOwnedByWrongProgram")) {
+    return "Account state conflict. Please refresh and try again, or disable Privacy mode.";
   }
   if (errorStr.includes("Blockhash not found")) {
     return "Network error. Please try again.";

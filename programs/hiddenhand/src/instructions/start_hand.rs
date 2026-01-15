@@ -134,9 +134,11 @@ pub fn handler(ctx: Context<StartHand>) -> Result<()> {
     // Initialize deck state
     let deck_state = &mut ctx.accounts.deck_state;
     deck_state.hand = hand_state.key();
-    deck_state.cards = [0u128; DECK_SIZE]; // Will be filled with encrypted values
+    deck_state.cards = [0u128; DECK_SIZE]; // Will be shuffled on ER, not here
     deck_state.deal_index = 0;
     deck_state.is_shuffled = false;
+    deck_state.vrf_seed = [0u8; 32]; // Will be set by VRF callback
+    deck_state.seed_received = false;
     deck_state.bump = ctx.bumps.deck_state;
 
     msg!(

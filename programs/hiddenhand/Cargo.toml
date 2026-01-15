@@ -23,8 +23,10 @@ custom-panic = []
 [dependencies]
 anchor-lang = { version = "0.32.1", features = ["init-if-needed"] }
 # anchor-spl = "0.32.1" - temporarily disabled due to toolchain compatibility
-# TODO: Add once Anchor toolchain supports edition2024
-# inco-lightning = { version = "0.1.4", features = ["cpi"] }
+
+# NOTE: We use manual CPI to Inco instead of inco-lightning SDK
+# This avoids version conflicts (inco-lightning needs anchor 0.31.1)
+# See src/inco_cpi.rs for the manual implementation
 
 # MagicBlock SDK for VRF (verifiable randomness) and Ephemeral Rollups (privacy)
 ephemeral-rollups-sdk = { version = "0.6.5", features = ["anchor", "disable-realloc"] }

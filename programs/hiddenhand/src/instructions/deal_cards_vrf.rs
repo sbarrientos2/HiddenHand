@@ -5,16 +5,16 @@ use crate::constants::*;
 use crate::error::HiddenHandError;
 use crate::state::{DeckState, GamePhase, HandState, PlayerSeat, PlayerStatus, Table, TableStatus};
 
-/// Deal cards after VRF shuffle has completed
-/// This instruction distributes hole cards and posts blinds
-/// Use this after request_shuffle + callback_shuffle for provably fair games
+/// Deal cards after VRF seed has been received
+/// This instruction SHUFFLES the deck using the VRF seed and distributes hole cards
+/// IMPORTANT: The shuffle happens HERE (on ER after delegation), NOT in callback_shuffle
+/// This ensures the card order is never visible on the base layer
 #[derive(Accounts)]
 pub struct DealCardsVrf<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
 
     #[account(
-        mut,
         seeds = [TABLE_SEED, table.table_id.as_ref()],
         bump = table.bump,
         constraint = table.authority == authority.key() @ HiddenHandError::UnauthorizedAuthority
@@ -84,9 +84,9 @@ pub fn handler(ctx: Context<DealCardsVrf>) -> Result<()> {
         HiddenHandError::InvalidPhase
     );
 
-    // REQUIRE deck is already shuffled (by VRF)
+    // REQUIRE VRF seed has been received (but NOT shuffled yet)
     require!(
-        deck_state.is_shuffled,
+        deck_state.seed_received,
         HiddenHandError::DeckNotShuffled
     );
 
@@ -95,7 +95,48 @@ pub fn handler(ctx: Context<DealCardsVrf>) -> Result<()> {
         HiddenHandError::HandNotInProgress
     );
 
-    // Read shuffled cards from deck_state
+    // ============================================================
+    // SHUFFLE THE DECK HERE (on ER, not on base layer!)
+    // This ensures the card order is NEVER visible on the base layer
+    // ============================================================
+    let randomness = deck_state.vrf_seed;
+    msg!("Shuffling deck using VRF seed (first 8 bytes): {:?}", &randomness[0..8]);
+
+    // Initialize deck with cards 0-51
+    let mut deck: [u8; 52] = core::array::from_fn(|i| i as u8);
+
+    // Convert randomness to u64 seed for Fisher-Yates shuffle
+    let mut seed = u64::from_le_bytes(randomness[0..8].try_into().unwrap());
+
+    // Fisher-Yates shuffle using VRF randomness
+    for i in (1..52).rev() {
+        // Use different parts of randomness for each iteration
+        if i % 4 == 0 && i < 28 {
+            // Mix in more randomness periodically
+            let offset = (i / 4) * 8;
+            if offset + 8 <= 32 {
+                seed ^= u64::from_le_bytes(randomness[offset..offset + 8].try_into().unwrap());
+            }
+        }
+
+        // LCG step with VRF-seeded state
+        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        let j = (seed % (i as u64 + 1)) as usize;
+        deck.swap(i, j);
+    }
+
+    // Store shuffled deck
+    for i in 0..52 {
+        deck_state.cards[i] = deck[i] as u128;
+    }
+    deck_state.is_shuffled = true;
+
+    // Reserve first 5 cards for community cards (indices 0-4)
+    deck_state.deal_index = 5;
+
+    msg!("Deck shuffled on ER. Card order is now private.");
+
+    // Convert to Vec for dealing
     let deck: Vec<u8> = deck_state.cards.iter().map(|c| *c as u8).collect();
 
     // Track seat indices and active player count

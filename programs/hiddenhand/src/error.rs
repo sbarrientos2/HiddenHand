@@ -103,4 +103,7 @@ pub enum HiddenHandError {
 
     #[msg("Invalid remaining accounts")]
     InvalidRemainingAccounts,
+
+    #[msg("Invalid account count - expected multiple of 3 for encryption")]
+    InvalidAccountCount,
 }

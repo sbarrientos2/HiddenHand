@@ -1,5 +1,6 @@
 pub mod constants;
 pub mod error;
+pub mod inco_cpi;
 pub mod instructions;
 pub mod state;
 
@@ -9,6 +10,7 @@ use anchor_lang::prelude::*;
 use ephemeral_rollups_sdk::anchor::ephemeral;
 
 pub use constants::*;
+pub use inco_cpi::*;
 pub use instructions::*;
 pub use state::*;
 
@@ -100,10 +102,34 @@ pub mod hiddenhand {
         instructions::delegate_seat::handler(ctx, seat_index)
     }
 
+    /// Delegate hand state to Ephemeral Rollup
+    /// Must be called after start_hand, before gameplay begins
+    pub fn delegate_hand(ctx: Context<DelegateHand>) -> Result<()> {
+        instructions::delegate_hand::handler(ctx)
+    }
+
+    /// Delegate deck state to Ephemeral Rollup
+    /// Must be called after start_hand, before shuffling/dealing
+    pub fn delegate_deck(ctx: Context<DelegateDeck>) -> Result<()> {
+        instructions::delegate_deck::handler(ctx)
+    }
+
     /// Undelegate player seat back to base layer
     /// Commits final state (chips) after hand or when leaving
     pub fn undelegate_seat(ctx: Context<UndelegateSeat>) -> Result<()> {
         instructions::undelegate_seat::handler(ctx)
+    }
+
+    /// Undelegate hand state back to base layer
+    /// Commits final hand state after showdown
+    pub fn undelegate_hand(ctx: Context<UndelegateHand>) -> Result<()> {
+        instructions::undelegate_hand::handler(ctx)
+    }
+
+    /// Undelegate deck state back to base layer
+    /// Commits final deck state after showdown
+    pub fn undelegate_deck(ctx: Context<UndelegateDeck>) -> Result<()> {
+        instructions::undelegate_deck::handler(ctx)
     }
 
     // ============================================================
@@ -117,16 +143,22 @@ pub mod hiddenhand {
         instructions::timeout_player::handler(ctx)
     }
 
-    // TODO: Add these instructions once Inco integration is complete
-    //
-    // /// Reveal community cards
+    // ============================================================
+    // Inco Encryption Instructions (Phase 2 - Cryptographic Privacy)
+    // ============================================================
+
+    /// Encrypt hole cards using Inco FHE
+    /// Called via Magic Actions after ER commit
+    /// Encrypts plaintext cards and grants decryption allowances to players
+    /// Call once per player with their seat_index
+    pub fn encrypt_hole_cards(ctx: Context<EncryptHoleCards>, seat_index: u8) -> Result<()> {
+        instructions::encrypt_hole_cards::handler(ctx, seat_index)
+    }
+
+    // TODO: Add community card reveal instruction
     // pub fn reveal_community(ctx: Context<RevealCommunity>, count: u8) -> Result<()> {
     //     // Reveal flop (3), turn (1), or river (1)
-    // }
-    //
-    // /// Timeout a player who hasn't acted
-    // pub fn timeout_player(ctx: Context<TimeoutPlayer>) -> Result<()> {
-    //     // Force fold inactive player
+    //     // Grants allowances to all active players for community cards
     // }
 }
 

@@ -1,6 +1,6 @@
 import { PublicKey } from "@solana/web3.js";
 
-// Program ID from Anchor.toml (synced with `anchor keys sync`)
+// Program ID from Anchor.toml - synced with keypair
 export const PROGRAM_ID = new PublicKey(
   "HS3GdhRBU3jMT4G6ogKVktKaibqsMhPRhDhNsmgzeB8Q"
 );

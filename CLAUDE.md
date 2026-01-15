@@ -11,12 +11,16 @@ This project was started for the **Solana Privacy Hack** hackathon (Jan 12-30, 2
    - Exciting demo potential
    - Targets MagicBlock ($5K) + Open Track ($18K) = $23K bounty potential
 
-2. **Privacy Approach**: Using **MagicBlock** (VRF + Ephemeral Rollups) for:
-   - **VRF (Verifiable Random Function)**: Provably fair card shuffling using Curve25519 Ristretto + Schnorr signatures
-   - **Private Ephemeral Rollups (PER)**: Private hole cards visible only to player via TEE-based rollups
-   - **Low latency**: 10ms transactions instead of 400ms
+2. **Privacy Approach**: Hybrid **MagicBlock + Inco** for ultimate privacy:
+   - **Phase 1 (Done):** MagicBlock VRF + Ephemeral Rollups
+     - **VRF**: Provably fair card shuffling
+     - **ER**: Fast gameplay (10ms latency), TEE-protected shuffle
+   - **Phase 2 (Done):** Inco FHE encryption via Magic Actions
+     - **Inco CPI**: Cards encrypted with FHE after shuffle
+     - **Allowances**: Only card owner can decrypt
+     - **Cryptographic guarantee**: Breaking requires SGX compromise, not chain reading
 
-3. **Previous Blocker (Resolved)**: Inco Lightning SDK required Rust edition2024. We pivoted to MagicBlock which has full Anchor compatibility.
+3. **Version Conflict (Resolved)**: Inco SDK needs Anchor 0.31.1, ER SDK needs 0.32.1. Solved by manual Inco CPI construction (see `src/inco_cpi.rs`).
 
 ### What's Built
 - Full poker game state machine (7 phases)
@@ -115,7 +119,18 @@ Dealing → PreFlop → Flop → Turn → River → Showdown → Settled
 | Instruction | Description | Status |
 |-------------|-------------|--------|
 | `delegate_seat` | Delegate player seat to Ephemeral Rollup | Done |
+| `delegate_hand` | Delegate hand state to ER | Done |
+| `delegate_deck` | Delegate deck state to ER | Done |
 | `undelegate_seat` | Commit state back to base layer | Done |
+| `undelegate_hand` | Commit hand state back | Done |
+| `undelegate_deck` | Commit deck state back | Done |
+
+### Inco FHE Instructions (Cryptographic Privacy - Phase 2)
+
+| Instruction | Description | Status |
+|-------------|-------------|--------|
+| `encrypt_hole_cards` | Encrypt cards via Inco FHE after ER commit | Done |
+| `reveal_community` | Grant allowances for community cards | TODO |
 
 ## File Structure
 
@@ -123,13 +138,14 @@ Dealing → PreFlop → Flop → Turn → River → Showdown → Settled
 hiddenhand/
 ├── programs/
 │   ├── hiddenhand/src/           # Main poker program
-│   │   ├── lib.rs                # Program entry (12 instructions)
+│   │   ├── lib.rs                # Program entry (18 instructions)
 │   │   ├── constants.rs          # PDA seeds, game constants
-│   │   ├── error.rs              # 26+ custom errors
+│   │   ├── error.rs              # 27+ custom errors
+│   │   ├── inco_cpi.rs           # Manual Inco CPI (no SDK)
 │   │   ├── state/
 │   │   │   ├── table.rs          # Table config, seat management
 │   │   │   ├── hand.rs           # Hand phases, pot, betting round
-│   │   │   ├── player.rs         # Player seat, chips, hole cards
+│   │   │   ├── player.rs         # Player seat, chips, hole cards (u128 handles)
 │   │   │   ├── deck.rs           # Deck state, card utilities
 │   │   │   └── hand_eval.rs      # Hand evaluation (best 5 from 7)
 │   │   └── instructions/
@@ -138,15 +154,19 @@ hiddenhand/
 │   │       ├── leave_table.rs
 │   │       ├── start_hand.rs
 │   │       ├── player_action.rs
-│   │       ├── deal_cards.rs     # Legacy shuffle (local testing)
-│   │       ├── showdown.rs       # Winner determination
+│   │       ├── deal_cards.rs         # Legacy shuffle (local testing)
+│   │       ├── showdown.rs           # Winner determination
+│   │       ├── timeout_player.rs     # Force fold inactive players
 │   │       ├── request_shuffle.rs    # VRF randomness request
-│   │       ├── callback_shuffle.rs   # VRF callback, shuffles deck
-│   │       ├── deal_cards_vrf.rs     # Deal after VRF shuffle
-│   │       ├── delegate_seat.rs      # ER delegation for privacy
-│   │       └── undelegate_seat.rs    # ER undelegation
-│   └── mb-test/src/              # MagicBlock learning program
-│       └── lib.rs                # VRF + ER test code
+│   │       ├── callback_shuffle.rs   # VRF callback, stores seed
+│   │       ├── deal_cards_vrf.rs     # Shuffle on ER + deal cards
+│   │       ├── delegate_seat.rs      # ER delegation
+│   │       ├── delegate_hand.rs      # ER delegation
+│   │       ├── delegate_deck.rs      # ER delegation
+│   │       ├── undelegate_*.rs       # ER undelegation
+│   │       └── encrypt_hole_cards.rs # Inco FHE encryption (Phase 2)
+│   ├── mb-test/src/              # MagicBlock learning program
+│   └── inco-er-test/src/         # Inco CPI test program
 ├── marketing/
 │   ├── PITCH.md
 │   ├── TAGLINES.md

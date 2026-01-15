@@ -31,6 +31,16 @@ export default function Home() {
     showdown,
     timeoutPlayer,
     setTableId,
+    // MagicBlock VRF
+    requestShuffle,
+    dealCardsVrf,
+    setUseVrf,
+    // MagicBlock Delegation
+    delegateSeat,
+    delegateGameState,
+    undelegateSeat,
+    undelegateGameState,
+    setUsePrivacyMode,
   } = usePokerGame();
 
   // Transaction toast notifications
@@ -547,11 +557,38 @@ export default function Home() {
                     {currentPlayer && (gameState.tableStatus === "Waiting" || currentPlayer.chips === 0) && (
                       <button
                         onClick={() => leaveTable()}
-                        disabled={loading}
+                        disabled={loading || gameState.isUndelegating}
                         className="btn-danger px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50"
                       >
-                        Leave Table
+                        {gameState.isUndelegating ? "Undelegating..." : "Leave Table"}
                       </button>
+                    )}
+
+                    {/* Delegation Status */}
+                    {currentPlayer && (
+                      <div className={`flex items-center gap-2 glass-dark px-3 py-1.5 rounded-lg ${
+                        gameState.isGameDelegated ? "border border-emerald-500/30" : ""
+                      }`}>
+                        {gameState.isDelegating ? (
+                          <>
+                            <div className="animate-spin h-3 w-3 border-2 border-emerald-400/30 border-t-emerald-400 rounded-full" />
+                            <span className="text-emerald-400 text-xs">Delegating...</span>
+                          </>
+                        ) : gameState.isGameDelegated ? (
+                          <>
+                            <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                            <span className="text-emerald-400 text-xs font-medium">Private Mode</span>
+                            <svg className="w-3 h-3 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                            </svg>
+                          </>
+                        ) : (
+                          <>
+                            <div className="w-2 h-2 rounded-full bg-gray-500" />
+                            <span className="text-gray-400 text-xs">Public Mode</span>
+                          </>
+                        )}
+                      </div>
                     )}
 
                     {/* Rebuy message */}
@@ -607,6 +644,46 @@ export default function Home() {
                     </span>
                   </div>
 
+                  {/* VRF Toggle */}
+                  <div className="flex items-center gap-2 glass-dark px-3 py-1.5 rounded-lg">
+                    <span className="text-[var(--text-muted)] text-xs uppercase tracking-wider">VRF</span>
+                    <button
+                      onClick={() => setUseVrf(!gameState.useVrf)}
+                      className={`relative w-10 h-5 rounded-full transition-colors ${
+                        gameState.useVrf ? "bg-purple-500" : "bg-gray-600"
+                      }`}
+                    >
+                      <span
+                        className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
+                          gameState.useVrf ? "translate-x-5" : ""
+                        }`}
+                      />
+                    </button>
+                    {gameState.useVrf && (
+                      <span className="text-purple-400 text-xs font-medium">Provably Fair</span>
+                    )}
+                  </div>
+
+                  {/* Privacy Mode Toggle */}
+                  <div className="flex items-center gap-2 glass-dark px-3 py-1.5 rounded-lg">
+                    <span className="text-[var(--text-muted)] text-xs uppercase tracking-wider">Privacy</span>
+                    <button
+                      onClick={() => setUsePrivacyMode(!gameState.usePrivacyMode)}
+                      className={`relative w-10 h-5 rounded-full transition-colors ${
+                        gameState.usePrivacyMode ? "bg-emerald-500" : "bg-gray-600"
+                      }`}
+                    >
+                      <span
+                        className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
+                          gameState.usePrivacyMode ? "translate-x-5" : ""
+                        }`}
+                      />
+                    </button>
+                    {gameState.usePrivacyMode && (
+                      <span className="text-emerald-400 text-xs font-medium">Auto-Delegate</span>
+                    )}
+                  </div>
+
                   {/* Count players with chips */}
                   {(() => {
                     const playersWithChips = gameState.players.filter(
@@ -640,8 +717,87 @@ export default function Home() {
                           )
                         )}
 
-                        {/* Deal Cards */}
-                        {gameState.phase === "Dealing" && (
+                        {/* Deal Cards - VRF Flow */}
+                        {gameState.phase === "Dealing" && gameState.useVrf && (
+                          canStart ? (
+                            <>
+                              {/* Step 1: Request VRF Shuffle */}
+                              {!gameState.isDeckShuffled && !gameState.isShuffling && (
+                                <button
+                                  onClick={() => withToast(
+                                    () => requestShuffle(),
+                                    "Requesting VRF shuffle...",
+                                    "Deck shuffled (VRF)"
+                                  )}
+                                  disabled={loading}
+                                  className="btn-gold px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50 flex items-center gap-2"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                  </svg>
+                                  Shuffle (VRF)
+                                </button>
+                              )}
+                              {/* Shuffling in progress */}
+                              {gameState.isShuffling && (
+                                <div className="flex items-center gap-2 text-purple-400 text-sm">
+                                  <div className="animate-spin h-4 w-4 border-2 border-purple-400/30 border-t-purple-400 rounded-full" />
+                                  VRF shuffling...
+                                </div>
+                              )}
+                              {/* Step 2: Enable Privacy (delegate all game state) */}
+                              {gameState.isDeckShuffled && gameState.usePrivacyMode && !gameState.isGameDelegated && !gameState.isDelegating && (
+                                <button
+                                  onClick={async () => {
+                                    try {
+                                      await delegateGameState();
+                                      addGameEvent("privacy", "Game state delegated to Ephemeral Rollup");
+                                    } catch (e) {
+                                      console.error("Failed to delegate:", e);
+                                    }
+                                  }}
+                                  disabled={loading}
+                                  className="btn-gold px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50 flex items-center gap-2"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                  </svg>
+                                  Enable Privacy
+                                </button>
+                              )}
+                              {gameState.isDelegating && (
+                                <div className="text-[var(--status-warning)] text-sm flex items-center gap-2">
+                                  <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                  Delegating to ER...
+                                </div>
+                              )}
+                              {/* Step 3: Deal Cards after shuffle (and after delegation if privacy mode) */}
+                              {gameState.isDeckShuffled && (!gameState.usePrivacyMode || gameState.isGameDelegated) && (
+                                <button
+                                  onClick={() => withToast(
+                                    () => dealCardsVrf(),
+                                    "Dealing VRF cards...",
+                                    "Cards dealt (VRF)"
+                                  )}
+                                  disabled={loading}
+                                  className="btn-success px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50 flex items-center gap-2"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                  </svg>
+                                  Deal Cards {gameState.isGameDelegated && "(Private)"}
+                                </button>
+                              )}
+                            </>
+                          ) : (
+                            <span className="text-[var(--status-warning)] text-sm">
+                              Cannot deal - need 2+ players with chips
+                            </span>
+                          )
+                        )}
+
+                        {/* Deal Cards - Standard (non-VRF) */}
+                        {gameState.phase === "Dealing" && !gameState.useVrf && (
                           canStart ? (
                             <button
                               onClick={() => withToast(
@@ -674,6 +830,33 @@ export default function Home() {
                     >
                       {gameState.phase === "Showdown" ? "Run Showdown" : "Award Pot"}
                     </button>
+                  )}
+
+                  {/* Undelegate after hand is settled (if delegated) */}
+                  {gameState.phase === "Settled" && gameState.pot === 0 && gameState.isGameDelegated && !gameState.isUndelegating && (
+                    <button
+                      onClick={async () => {
+                        try {
+                          await undelegateGameState();
+                          addGameEvent("privacy", "Game state committed back to chain");
+                        } catch (e) {
+                          console.error("Failed to undelegate:", e);
+                        }
+                      }}
+                      disabled={loading}
+                      className="btn-success px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50 flex items-center gap-2"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      Commit to Chain
+                    </button>
+                  )}
+                  {gameState.isUndelegating && (
+                    <div className="text-[var(--status-warning)] text-sm flex items-center gap-2">
+                      <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                      Committing state...
+                    </div>
                   )}
 
                   {/* Phase indicator */}

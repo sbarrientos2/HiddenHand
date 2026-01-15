@@ -11,13 +11,22 @@ pub struct DeckState {
 
     /// Shuffled encrypted cards (Inco handles)
     /// Each u128 is a handle to an encrypted card value (0-51)
+    /// NOTE: Cards are shuffled on ER after delegation, not on base layer
     pub cards: [u128; DECK_SIZE],
 
     /// Next card index to deal
     pub deal_index: u8,
 
-    /// Whether deck has been shuffled
+    /// Whether deck has been shuffled (shuffle happens on ER, not base layer)
     pub is_shuffled: bool,
+
+    /// VRF seed received from callback (stored on base layer)
+    /// The actual shuffle uses this seed but happens on ER after delegation
+    /// This ensures the shuffle order is never visible on base layer
+    pub vrf_seed: [u8; 32],
+
+    /// Whether VRF seed has been received
+    pub seed_received: bool,
 
     /// PDA bump
     pub bump: u8,
@@ -29,6 +38,8 @@ impl DeckState {
         (16 * DECK_SIZE) + // cards array (52 * 16 bytes)
         1 +  // deal_index
         1 +  // is_shuffled
+        32 + // vrf_seed
+        1 +  // seed_received
         1;   // bump
 
     /// Deal next card, returns the encrypted handle

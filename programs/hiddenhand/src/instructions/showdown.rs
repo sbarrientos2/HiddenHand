@@ -243,8 +243,8 @@ pub fn handler(ctx: Context<Showdown>) -> Result<()> {
                         seat.status = PlayerStatus::Sitting;
                         seat.current_bet = 0;
                         seat.total_bet_this_hand = 0;
-                        seat.hole_card_1 = 0;
-                        seat.hole_card_2 = 0;
+                        seat.hole_card_1 = 255; // Sentinel: not dealt
+                        seat.hole_card_2 = 255; // Sentinel: not dealt
                         seat.has_acted = false;
                         seat.try_serialize(&mut *data)?;
                     }

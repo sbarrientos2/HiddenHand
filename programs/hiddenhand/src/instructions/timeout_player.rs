@@ -13,7 +13,6 @@ pub struct TimeoutPlayer<'info> {
     pub caller: Signer<'info>,
 
     #[account(
-        mut,
         seeds = [TABLE_SEED, table.table_id.as_ref()],
         bump = table.bump
     )]

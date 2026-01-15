@@ -16,12 +16,31 @@ import "@solana/wallet-adapter-react-ui/styles.css";
 // For development: "localnet" (requires solana-test-validator running)
 // For demo/production: "devnet"
 export type Network = "localnet" | "devnet";
-export const NETWORK: Network = "localnet";
+export const NETWORK: Network = "devnet";
 
+// Base layer endpoints (Solana)
 const ENDPOINTS: Record<Network, string> = {
   localnet: "http://127.0.0.1:8899",
   devnet: clusterApiUrl("devnet"),
 };
+
+// MagicBlock Ephemeral Rollup endpoints (for fast transactions)
+const ER_ENDPOINTS: Record<Network, { http: string; ws: string }> = {
+  localnet: {
+    http: "http://localhost:7799",
+    ws: "ws://localhost:7800",
+  },
+  devnet: {
+    http: "https://devnet.magicblock.app/",
+    ws: "wss://devnet.magicblock.app/",
+  },
+};
+
+// Export endpoints for use in hooks
+export const getEndpoints = () => ({
+  baseLayer: ENDPOINTS[NETWORK],
+  ephemeralRollup: ER_ENDPOINTS[NETWORK],
+});
 
 interface Props {
   children: ReactNode;

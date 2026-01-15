@@ -14,6 +14,12 @@ import {
   generateTableId,
 } from "@/lib/program";
 import {
+  DEFAULT_QUEUE,
+  waitForShuffle,
+  isAccountDelegated,
+  isAccountDelegatedByOwner,
+} from "@/lib/magicblock";
+import {
   mapPlayerStatus,
   mapGamePhase,
   mapTableStatus,
@@ -72,6 +78,16 @@ export interface PlayerSeatAccount {
   bump: number;
 }
 
+export interface DeckStateAccount {
+  hand: PublicKey;
+  cards: BN[];
+  dealIndex: number;
+  isShuffled: boolean;
+  vrfSeed: number[]; // 32 bytes
+  seedReceived: boolean; // VRF seed received, ready for shuffle on ER
+  bump: number;
+}
+
 // UI-friendly types
 export interface Player {
   seatIndex: number;
@@ -81,6 +97,7 @@ export interface Player {
   holeCards: [number | null, number | null];
   status: "empty" | "sitting" | "playing" | "folded" | "allin";
   isActive: boolean;
+  isDelegated?: boolean; // Whether seat is delegated to ER
 }
 
 export interface GameState {
@@ -88,6 +105,7 @@ export interface GameState {
   tablePDA: PublicKey | null;
   table: TableAccount | null;
   handState: HandStateAccount | null;
+  deckState: DeckStateAccount | null;
   players: Player[];
   phase: "Dealing" | "PreFlop" | "Flop" | "Turn" | "River" | "Showdown" | "Settled";
   tableStatus: "Waiting" | "Playing" | "Closed";
@@ -103,6 +121,16 @@ export interface GameState {
   currentPlayerSeat: number | null;
   lastActionTime: number | null; // Unix timestamp for timeout tracking
   lastReadyTime: number | null; // Unix timestamp for start_hand timeout
+  // MagicBlock state
+  useVrf: boolean; // Whether to use VRF for shuffling
+  isShuffling: boolean; // VRF shuffle in progress
+  isDeckShuffled: boolean; // VRF shuffle complete
+  // Delegation state
+  isSeatDelegated: boolean; // Whether current player's seat is delegated to ER
+  isGameDelegated: boolean; // Whether hand/deck/seats are all delegated to ER
+  isDelegating: boolean; // Delegation in progress
+  isUndelegating: boolean; // Undelegation in progress
+  usePrivacyMode: boolean; // Whether to auto-delegate for privacy
 }
 
 export interface UsePokerGameResult {
@@ -121,9 +149,26 @@ export interface UsePokerGameResult {
   showdown: () => Promise<string>;
   timeoutPlayer: () => Promise<string>;
 
+  // MagicBlock VRF Actions
+  requestShuffle: () => Promise<string>;
+  dealCardsVrf: () => Promise<string>;
+
+  // MagicBlock Delegation Actions
+  delegateSeat: () => Promise<string>;
+  delegateHand: () => Promise<string>;
+  delegateDeck: () => Promise<string>;
+  delegateGameState: () => Promise<void>; // Delegates all game accounts
+  undelegateSeat: () => Promise<string>;
+  undelegateHand: () => Promise<string>;
+  undelegateDeck: () => Promise<string>;
+  undelegateGameState: () => Promise<void>; // Undelegates all game accounts
+
   // Utilities
   refreshState: () => Promise<void>;
   setTableId: (tableId: string) => void;
+  setUseVrf: (useVrf: boolean) => void;
+  setUsePrivacyMode: (usePrivacy: boolean) => void;
+  checkDelegationStatus: () => Promise<boolean>;
 }
 
 export interface CreateTableConfig {
@@ -147,6 +192,7 @@ const initialGameState: GameState = {
   tablePDA: null,
   table: null,
   handState: null,
+  deckState: null,
   players: [],
   phase: "Settled",
   tableStatus: "Waiting",
@@ -162,14 +208,51 @@ const initialGameState: GameState = {
   currentPlayerSeat: null,
   lastActionTime: null,
   lastReadyTime: null,
+  // MagicBlock state
+  useVrf: true, // VRF oracle is working - use provably fair shuffling
+  isShuffling: false,
+  isDeckShuffled: false,
+  // Delegation state
+  isSeatDelegated: false,
+  isGameDelegated: false,
+  isDelegating: false,
+  isUndelegating: false,
+  usePrivacyMode: false, // Default to public mode (toggle on for privacy via ER)
 };
 
 export function usePokerGame(): UsePokerGameResult {
-  const { program, provider, publicKey } = usePokerProgram();
+  const { program, provider, publicKey, erProgram, erProvider, erConnection } = usePokerProgram();
   const [gameState, setGameState] = useState<GameState>(initialGameState);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Toggle VRF mode
+  const setUseVrf = useCallback((useVrf: boolean) => {
+    setGameState((prev) => ({ ...prev, useVrf }));
+  }, []);
+
+  // Toggle Privacy mode (auto-delegation)
+  const setUsePrivacyMode = useCallback((usePrivacyMode: boolean) => {
+    setGameState((prev) => ({ ...prev, usePrivacyMode }));
+  }, []);
+
+  // Check if current player's seat is delegated to ER
+  const checkDelegationStatus = useCallback(async (): Promise<boolean> => {
+    if (!provider || !gameState.tablePDA || gameState.currentPlayerSeat === null) {
+      return false;
+    }
+
+    try {
+      const [seatPDA] = getSeatPDA(gameState.tablePDA, gameState.currentPlayerSeat);
+      const isDelegated = await isAccountDelegated(provider.connection, seatPDA);
+      setGameState((prev) => ({ ...prev, isSeatDelegated: isDelegated }));
+      return isDelegated;
+    } catch (e) {
+      console.error("Error checking delegation status:", e);
+      return false;
+    }
+  }, [provider, gameState.tablePDA, gameState.currentPlayerSeat]);
 
   // Set table ID and derive PDA
   const setTableId = useCallback((tableId: string) => {
@@ -187,14 +270,16 @@ export function usePokerGame(): UsePokerGameResult {
   }, []);
 
   // Fetch all player seats for a table
+  // useER: if true, fetch from ER (for delegated accounts)
   const fetchPlayerSeats = useCallback(
-    async (tablePDA: PublicKey, maxPlayers: number, occupiedSeats: number): Promise<Player[]> => {
-      if (!program) return [];
+    async (tablePDA: PublicKey, maxPlayers: number, occupiedSeats: number, useER: boolean = false): Promise<Player[]> => {
+      const activeProgram = useER && erProgram ? erProgram : program;
+      if (!activeProgram) return [];
 
       const players: Player[] = [];
       const occupied = getOccupiedSeats(occupiedSeats, maxPlayers);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const accounts = program.account as any;
+      const accounts = activeProgram.account as any;
 
       for (let i = 0; i < maxPlayers; i++) {
         if (occupied.includes(i)) {
@@ -253,38 +338,65 @@ export function usePokerGame(): UsePokerGameResult {
 
       return players;
     },
-    [program, publicKey]
+    [program, erProgram, publicKey]
   );
 
   // Refresh all game state
+  // Fetches from ER when game is delegated, otherwise from base layer
+  // Auto-detects delegation by checking account owners
   const refreshState = useCallback(async () => {
-    if (!program || !gameState.tablePDA) return;
+    if (!program || !provider || !gameState.tablePDA) return;
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const accounts = program.account as any;
+    const baseAccounts = program.account as any; // Table is always on base layer
+
+    // First, fetch table from base layer to get hand number
+    let table: TableAccount;
+    try {
+      table = await baseAccounts.table.fetch(gameState.tablePDA) as TableAccount;
+    } catch (e) {
+      setGameState((prev) => ({
+        ...prev,
+        table: null,
+        tableStatus: "Waiting",
+      }));
+      return;
+    }
+
+    // Auto-detect if game is delegated by checking if hand state is owned by Delegation Program
+    // Only check when table is actively Playing - we don't care about old delegated accounts from previous hands
+    const tableStatus = mapTableStatus(table.status);
+    let detectedDelegation = false;
+    if (tableStatus === "Playing" && table.handNumber.toNumber() > 0) {
+      const [handPDA] = getHandPDA(gameState.tablePDA, BigInt(table.handNumber.toNumber()));
+      detectedDelegation = await isAccountDelegatedByOwner(provider.connection, handPDA);
+      if (detectedDelegation) {
+        console.log("Auto-detected: Game is delegated to ER");
+      }
+    }
+    // Reset delegation state when table goes back to Waiting (hand is over)
+    if (tableStatus === "Waiting") {
+      detectedDelegation = false;
+    }
+
+    // Use ER if we detected delegation OR if local state says delegated
+    const useER = (detectedDelegation || gameState.isGameDelegated) && erProgram;
+    const activeProgram = useER ? erProgram : program;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const accounts = activeProgram.account as any;
 
     try {
-      // Fetch table account
-      let table: TableAccount;
-      try {
-        table = await accounts.table.fetch(gameState.tablePDA) as TableAccount;
-      } catch (e) {
-        // Table doesn't exist
-        setGameState((prev) => ({
-          ...prev,
-          table: null,
-          tableStatus: "Waiting",
-        }));
-        return;
-      }
-
-      const tableStatus = mapTableStatus(table.status);
+      // Table was already fetched above for delegation detection
+      // tableStatus already computed above
       const isAuthority = publicKey?.equals(table.authority) ?? false;
 
-      // Fetch player seats
+      // Fetch player seats - from ER when delegated
       const players = await fetchPlayerSeats(
         gameState.tablePDA,
         table.maxPlayers,
-        table.occupiedSeats
+        table.occupiedSeats,
+        useER // Pass useER flag to fetch from ER when delegated
       );
 
       // Find current player's seat
@@ -294,10 +406,19 @@ export function usePokerGame(): UsePokerGameResult {
 
       // Fetch hand state if playing
       let handState: HandStateAccount | null = null;
+      let deckState: DeckStateAccount | null = null;
       if (tableStatus === "Playing" && table.handNumber.toNumber() > 0) {
         try {
           const [handPDA] = getHandPDA(gameState.tablePDA, BigInt(table.handNumber.toNumber()));
           handState = await accounts.handState.fetch(handPDA) as HandStateAccount;
+
+          // Also fetch deck state for VRF status
+          const [deckPDA] = getDeckPDA(gameState.tablePDA, BigInt(table.handNumber.toNumber()));
+          try {
+            deckState = await accounts.deckState.fetch(deckPDA) as DeckStateAccount;
+          } catch (e) {
+            // Deck state might not exist yet
+          }
         } catch (e) {
           // Hand doesn't exist yet
         }
@@ -324,6 +445,7 @@ export function usePokerGame(): UsePokerGameResult {
         ...prev,
         table,
         handState,
+        deckState,
         players,
         phase,
         tableStatus,
@@ -339,6 +461,12 @@ export function usePokerGame(): UsePokerGameResult {
         currentPlayerSeat,
         lastActionTime: handState?.lastActionTime?.toNumber() ?? null,
         lastReadyTime: table.lastReadyTime?.toNumber() ?? null,
+        // seedReceived means VRF callback completed and deck is ready for dealing on ER
+        isDeckShuffled: deckState?.seedReceived ?? false,
+        // Auto-update delegation status based on detection
+        // Reset to false when table is Waiting (hand is over), otherwise preserve/detect
+        isGameDelegated: tableStatus === "Waiting" ? false : (detectedDelegation || gameState.isGameDelegated),
+        isSeatDelegated: tableStatus === "Waiting" ? false : (detectedDelegation || gameState.isSeatDelegated),
       }));
 
       setError(null);
@@ -346,7 +474,7 @@ export function usePokerGame(): UsePokerGameResult {
       console.error("Error refreshing state:", e);
       setError(e instanceof Error ? e.message : "Failed to fetch game state");
     }
-  }, [program, gameState.tablePDA, publicKey, fetchPlayerSeats]);
+  }, [program, provider, erProgram, gameState.tablePDA, gameState.isGameDelegated, gameState.isSeatDelegated, publicKey, fetchPlayerSeats]);
 
   // Start polling when table is set
   useEffect(() => {
@@ -423,7 +551,7 @@ export function usePokerGame(): UsePokerGameResult {
     [program, provider, publicKey, setTableId, refreshState]
   );
 
-  // Join table
+  // Join table (with optional auto-delegation for privacy)
   const joinTable = useCallback(
     async (seatIndex: number, buyInLamports: number): Promise<string> => {
       if (!program || !provider || !publicKey || !gameState.tablePDA) {
@@ -437,6 +565,7 @@ export function usePokerGame(): UsePokerGameResult {
         const [seatPDA] = getSeatPDA(gameState.tablePDA, seatIndex);
         const [vaultPDA] = getVaultPDA(gameState.tablePDA);
 
+        // Step 1: Join the table on base layer
         const tx = await program.methods
           .joinTable(seatIndex, new BN(buyInLamports))
           .accounts({
@@ -450,6 +579,22 @@ export function usePokerGame(): UsePokerGameResult {
 
         await provider.connection.confirmTransaction(tx, "confirmed");
         await refreshState();
+
+        // Privacy mode note: Seats are NOT delegated on join.
+        // Full privacy requires delegating ALL game accounts together AFTER startHand:
+        // 1. startHand() - creates handState + deckState on base layer
+        // 2. requestShuffle() - VRF shuffle on base layer (if using VRF)
+        // 3. [wait for shuffle to complete]
+        // 4. delegateGameState() - delegates hand + deck + all seats together
+        // 5. dealCardsVrf() / dealCards() - now runs on ER
+        // 6. playerAction() - runs on ER (fast + private)
+        // 7. showdown() - runs on ER
+        // 8. undelegateGameState() - commits state back to base layer
+        if (gameState.usePrivacyMode) {
+          console.log("Privacy mode enabled. After startHand, call delegateGameState() to enable privacy.");
+          console.log("Flow: startHand → [shuffle if VRF] → delegateGameState → deal → play → showdown → undelegateGameState");
+        }
+
         return tx;
       } catch (e) {
         const message = parseAnchorError(e, {
@@ -462,10 +607,10 @@ export function usePokerGame(): UsePokerGameResult {
         setLoading(false);
       }
     },
-    [program, provider, publicKey, gameState.tablePDA, gameState.table, refreshState]
+    [program, provider, publicKey, gameState.tablePDA, gameState.table, gameState.usePrivacyMode, refreshState]
   );
 
-  // Leave table
+  // Leave table (with auto-undelegation if delegated)
   const leaveTable = useCallback(async (): Promise<string> => {
     if (!program || !provider || !publicKey || !gameState.tablePDA || gameState.currentPlayerSeat === null) {
       throw new Error("Not at table");
@@ -478,6 +623,48 @@ export function usePokerGame(): UsePokerGameResult {
       const [seatPDA] = getSeatPDA(gameState.tablePDA, gameState.currentPlayerSeat);
       const [vaultPDA] = getVaultPDA(gameState.tablePDA);
 
+      // Step 1: If game state is delegated, check if seat is actually delegated and undelegate first
+      if (gameState.isGameDelegated && erProgram && erProvider) {
+        // First check if seat is actually delegated (might have been undelegated by showdown)
+        const isSeatActuallyDelegated = await isAccountDelegatedByOwner(provider.connection, seatPDA);
+
+        if (isSeatActuallyDelegated) {
+          console.log("Seat is delegated - undelegating from Ephemeral Rollup...");
+          setGameState((prev) => ({ ...prev, isUndelegating: true }));
+
+          try {
+            const undelegateTx = await erProgram.methods
+              .undelegateSeat()
+              .accounts({
+                payer: publicKey,
+                table: gameState.tablePDA,
+                seat: seatPDA,
+              })
+              .rpc();
+
+            await erProvider.connection.confirmTransaction(undelegateTx, "confirmed");
+            console.log("Seat undelegated successfully:", undelegateTx);
+
+            // Wait a bit for state to commit to base layer
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
+            setGameState((prev) => ({
+              ...prev,
+              isUndelegating: false,
+              isSeatDelegated: false,
+            }));
+          } catch (undelegateError) {
+            console.warn("Failed to undelegate seat (may already be undelegated):", undelegateError);
+            setGameState((prev) => ({ ...prev, isUndelegating: false }));
+            // Continue to leave - seat might already be on base layer
+          }
+        } else {
+          console.log("Seat already on base layer (was undelegated by showdown)");
+          setGameState((prev) => ({ ...prev, isGameDelegated: false, isSeatDelegated: false }));
+        }
+      }
+
+      // Step 2: Leave the table on base layer
       const tx = await program.methods
         .leaveTable()
         .accounts({
@@ -490,6 +677,7 @@ export function usePokerGame(): UsePokerGameResult {
         .rpc();
 
       await provider.connection.confirmTransaction(tx, "confirmed");
+      setGameState((prev) => ({ ...prev, isSeatDelegated: false, isGameDelegated: false }));
       await refreshState();
       return tx;
     } catch (e) {
@@ -499,7 +687,7 @@ export function usePokerGame(): UsePokerGameResult {
     } finally {
       setLoading(false);
     }
-  }, [program, provider, publicKey, gameState.tablePDA, gameState.currentPlayerSeat, refreshState]);
+  }, [program, provider, erProgram, erProvider, publicKey, gameState.tablePDA, gameState.currentPlayerSeat, gameState.isGameDelegated, refreshState]);
 
   // Start hand (authority only)
   const startHand = useCallback(async (): Promise<string> => {
@@ -538,7 +726,7 @@ export function usePokerGame(): UsePokerGameResult {
     }
   }, [program, provider, publicKey, gameState.tablePDA, gameState.table, refreshState]);
 
-  // Deal cards (authority can call immediately, anyone else after timeout)
+  // Deal cards (pseudorandom - non-VRF fallback)
   const dealCards = useCallback(async (): Promise<string> => {
     if (!program || !provider || !publicKey || !gameState.tablePDA || !gameState.table) {
       throw new Error("Table not ready");
@@ -606,19 +794,549 @@ export function usePokerGame(): UsePokerGameResult {
     }
   }, [program, provider, publicKey, gameState.tablePDA, gameState.table, refreshState]);
 
-  // Player action
+  // ============================================================
+  // MagicBlock VRF: Request shuffle (initiates VRF randomness)
+  // ============================================================
+  const requestShuffle = useCallback(async (): Promise<string> => {
+    if (!program || !provider || !publicKey || !gameState.tablePDA || !gameState.table) {
+      throw new Error("Table not ready");
+    }
+
+    setLoading(true);
+    setError(null);
+    setGameState((prev) => ({ ...prev, isShuffling: true }));
+
+    try {
+      const handNumber = BigInt(gameState.table.handNumber.toNumber());
+      const [handPDA] = getHandPDA(gameState.tablePDA, handNumber);
+      const [deckPDA] = getDeckPDA(gameState.tablePDA, handNumber);
+
+      const tx = await program.methods
+        .requestShuffle()
+        .accounts({
+          authority: publicKey,
+          table: gameState.tablePDA,
+          handState: handPDA,
+          deckState: deckPDA,
+          oracleQueue: DEFAULT_QUEUE,
+        })
+        .rpc();
+
+      await provider.connection.confirmTransaction(tx, "confirmed");
+
+      // Wait for VRF callback to complete the shuffle
+      console.log("VRF shuffle requested, waiting for oracle callback...");
+      const shuffled = await waitForShuffle(provider.connection, deckPDA, 30000, 1000);
+
+      if (shuffled) {
+        console.log("VRF shuffle completed!");
+        setGameState((prev) => ({ ...prev, isShuffling: false, isDeckShuffled: true }));
+      } else {
+        console.warn("VRF shuffle timed out");
+        setGameState((prev) => ({ ...prev, isShuffling: false }));
+        throw new Error("VRF shuffle timed out. The oracle may be busy.");
+      }
+
+      await refreshState();
+      return tx;
+    } catch (e) {
+      setGameState((prev) => ({ ...prev, isShuffling: false }));
+      const message = parseAnchorError(e);
+      setError(message);
+      throw e;
+    } finally {
+      setLoading(false);
+    }
+  }, [program, provider, publicKey, gameState.tablePDA, gameState.table, refreshState]);
+
+  // ============================================================
+  // MagicBlock VRF: Deal cards after VRF shuffle
+  // Routes through ER when seats are delegated for privacy
+  // ============================================================
+  const dealCardsVrf = useCallback(async (): Promise<string> => {
+    if (!program || !provider || !publicKey || !gameState.tablePDA || !gameState.table) {
+      throw new Error("Table not ready");
+    }
+
+    if (!gameState.isDeckShuffled) {
+      throw new Error("VRF seed not received yet. Call requestShuffle first.");
+    }
+
+    // Check if accounts are actually delegated (regardless of local state)
+    const handNumber = BigInt(gameState.table.handNumber.toNumber());
+    const [handPDA] = getHandPDA(gameState.tablePDA, handNumber);
+    const isActuallyDelegated = await isAccountDelegatedByOwner(provider.connection, handPDA);
+
+    // Use ER when accounts are actually delegated
+    const useER = isActuallyDelegated && erProgram && erProvider;
+    const activeProgram = useER ? erProgram : program;
+    const activeProvider = useER ? erProvider : provider;
+
+    if (useER) {
+      console.log("Using Ephemeral Rollup for deal_cards_vrf (accounts are delegated)");
+    } else if (gameState.isGameDelegated && !isActuallyDelegated) {
+      console.warn("Local state says delegated but accounts are on base layer - using base layer");
+      setGameState((prev) => ({ ...prev, isGameDelegated: false, isSeatDelegated: false }));
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      // handNumber and handPDA already derived above for delegation check
+      const [deckPDA] = getDeckPDA(gameState.tablePDA, handNumber);
+
+      // Find SB and BB positions
+      const dealerPos = gameState.table.dealerPosition;
+      const occupied = getOccupiedSeats(gameState.table.occupiedSeats, gameState.table.maxPlayers);
+      const isHeadsUp = occupied.length === 2;
+
+      const findNextOccupied = (startPos: number): number => {
+        let pos = (startPos + 1) % gameState.table!.maxPlayers;
+        while (!occupied.includes(pos)) {
+          pos = (pos + 1) % gameState.table!.maxPlayers;
+        }
+        return pos;
+      };
+
+      let sbPos: number;
+      let bbPos: number;
+
+      if (isHeadsUp) {
+        sbPos = dealerPos;
+        bbPos = findNextOccupied(dealerPos);
+      } else {
+        sbPos = findNextOccupied(dealerPos);
+        bbPos = findNextOccupied(sbPos);
+      }
+
+      const [sbSeatPDA] = getSeatPDA(gameState.tablePDA, sbPos);
+      const [bbSeatPDA] = getSeatPDA(gameState.tablePDA, bbPos);
+
+      // Build remaining accounts for other players (not SB/BB)
+      const remainingAccounts: { pubkey: PublicKey; isSigner: boolean; isWritable: boolean }[] = [];
+      for (const seatIndex of occupied) {
+        if (seatIndex !== sbPos && seatIndex !== bbPos) {
+          const [seatPDA] = getSeatPDA(gameState.tablePDA!, seatIndex);
+          remainingAccounts.push({
+            pubkey: seatPDA,
+            isSigner: false,
+            isWritable: true,
+          });
+        }
+      }
+
+      const tx = await activeProgram.methods
+        .dealCardsVrf()
+        .accounts({
+          authority: publicKey,
+          table: gameState.tablePDA,
+          handState: handPDA,
+          deckState: deckPDA,
+          sbSeat: sbSeatPDA,
+          bbSeat: bbSeatPDA,
+        })
+        .remainingAccounts(remainingAccounts)
+        .rpc();
+
+      await activeProvider.connection.confirmTransaction(tx, "confirmed");
+      setGameState((prev) => ({ ...prev, isDeckShuffled: false })); // Reset for next hand
+      await refreshState();
+      return tx;
+    } catch (e) {
+      const message = parseAnchorError(e);
+      setError(message);
+      throw e;
+    } finally {
+      setLoading(false);
+    }
+  }, [program, provider, erProgram, erProvider, publicKey, gameState.tablePDA, gameState.table, gameState.isDeckShuffled, gameState.isSeatDelegated, refreshState]);
+
+  // ============================================================
+  // MagicBlock Delegation: Delegate seat to Ephemeral Rollup
+  // ============================================================
+  const delegateSeat = useCallback(async (): Promise<string> => {
+    if (!program || !provider || !publicKey || !gameState.tablePDA || gameState.currentPlayerSeat === null) {
+      throw new Error("Not at table");
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const [seatPDA] = getSeatPDA(gameState.tablePDA, gameState.currentPlayerSeat);
+
+      const tx = await program.methods
+        .delegateSeat(gameState.currentPlayerSeat)
+        .accounts({
+          payer: publicKey,
+          player: publicKey,
+          table: gameState.tablePDA,
+          seat: seatPDA,
+        })
+        .rpc();
+
+      await provider.connection.confirmTransaction(tx, "confirmed");
+      await refreshState();
+      return tx;
+    } catch (e) {
+      const message = parseAnchorError(e);
+      setError(message);
+      throw e;
+    } finally {
+      setLoading(false);
+    }
+  }, [program, provider, publicKey, gameState.tablePDA, gameState.currentPlayerSeat, refreshState]);
+
+  // ============================================================
+  // MagicBlock Delegation: Undelegate seat from Ephemeral Rollup
+  // ============================================================
+  const undelegateSeat = useCallback(async (): Promise<string> => {
+    // Use ER program for undelegation since the account is on ER
+    if (!erProgram || !erProvider || !publicKey || !gameState.tablePDA || gameState.currentPlayerSeat === null) {
+      throw new Error("Not at table or ER not available");
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const [seatPDA] = getSeatPDA(gameState.tablePDA, gameState.currentPlayerSeat);
+
+      const tx = await erProgram.methods
+        .undelegateSeat()
+        .accounts({
+          payer: publicKey,
+          table: gameState.tablePDA,
+          seat: seatPDA,
+        })
+        .rpc();
+
+      await erProvider.connection.confirmTransaction(tx, "confirmed");
+      await refreshState();
+      return tx;
+    } catch (e) {
+      const message = parseAnchorError(e);
+      setError(message);
+      throw e;
+    } finally {
+      setLoading(false);
+    }
+  }, [erProgram, erProvider, publicKey, gameState.tablePDA, gameState.currentPlayerSeat, refreshState]);
+
+  // ============================================================
+  // MagicBlock Delegation: Delegate hand state to Ephemeral Rollup
+  // ============================================================
+  const delegateHand = useCallback(async (): Promise<string> => {
+    if (!program || !provider || !publicKey || !gameState.tablePDA || !gameState.table) {
+      throw new Error("Table not ready");
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const handNumber = BigInt(gameState.table.handNumber.toNumber());
+      const [handPDA] = getHandPDA(gameState.tablePDA, handNumber);
+
+      const tx = await program.methods
+        .delegateHand()
+        .accounts({
+          payer: publicKey,
+          authority: publicKey,
+          table: gameState.tablePDA,
+          handState: handPDA,
+        })
+        .rpc();
+
+      await provider.connection.confirmTransaction(tx, "confirmed");
+      console.log("Hand state delegated to ER:", tx);
+      return tx;
+    } catch (e) {
+      const message = parseAnchorError(e);
+      setError(message);
+      throw e;
+    } finally {
+      setLoading(false);
+    }
+  }, [program, provider, publicKey, gameState.tablePDA, gameState.table]);
+
+  // ============================================================
+  // MagicBlock Delegation: Delegate deck state to Ephemeral Rollup
+  // ============================================================
+  const delegateDeck = useCallback(async (): Promise<string> => {
+    if (!program || !provider || !publicKey || !gameState.tablePDA || !gameState.table) {
+      throw new Error("Table not ready");
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const handNumber = BigInt(gameState.table.handNumber.toNumber());
+      const [deckPDA] = getDeckPDA(gameState.tablePDA, handNumber);
+
+      const tx = await program.methods
+        .delegateDeck()
+        .accounts({
+          payer: publicKey,
+          authority: publicKey,
+          table: gameState.tablePDA,
+          deckState: deckPDA,
+        })
+        .rpc();
+
+      await provider.connection.confirmTransaction(tx, "confirmed");
+      console.log("Deck state delegated to ER:", tx);
+      return tx;
+    } catch (e) {
+      const message = parseAnchorError(e);
+      setError(message);
+      throw e;
+    } finally {
+      setLoading(false);
+    }
+  }, [program, provider, publicKey, gameState.tablePDA, gameState.table]);
+
+  // ============================================================
+  // MagicBlock Delegation: Undelegate hand state from Ephemeral Rollup
+  // ============================================================
+  const undelegateHand = useCallback(async (): Promise<string> => {
+    if (!erProgram || !erProvider || !publicKey || !gameState.tablePDA || !gameState.table) {
+      throw new Error("Table not ready or ER not available");
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const handNumber = BigInt(gameState.table.handNumber.toNumber());
+      const [handPDA] = getHandPDA(gameState.tablePDA, handNumber);
+
+      const tx = await erProgram.methods
+        .undelegateHand()
+        .accounts({
+          payer: publicKey,
+          table: gameState.tablePDA,
+          handState: handPDA,
+        })
+        .rpc();
+
+      await erProvider.connection.confirmTransaction(tx, "confirmed");
+      console.log("Hand state undelegated from ER:", tx);
+      return tx;
+    } catch (e) {
+      const message = parseAnchorError(e);
+      setError(message);
+      throw e;
+    } finally {
+      setLoading(false);
+    }
+  }, [erProgram, erProvider, publicKey, gameState.tablePDA, gameState.table]);
+
+  // ============================================================
+  // MagicBlock Delegation: Undelegate deck state from Ephemeral Rollup
+  // ============================================================
+  const undelegateDeck = useCallback(async (): Promise<string> => {
+    if (!erProgram || !erProvider || !publicKey || !gameState.tablePDA || !gameState.table) {
+      throw new Error("Table not ready or ER not available");
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const handNumber = BigInt(gameState.table.handNumber.toNumber());
+      const [deckPDA] = getDeckPDA(gameState.tablePDA, handNumber);
+
+      const tx = await erProgram.methods
+        .undelegateDeck()
+        .accounts({
+          payer: publicKey,
+          table: gameState.tablePDA,
+          deckState: deckPDA,
+        })
+        .rpc();
+
+      await erProvider.connection.confirmTransaction(tx, "confirmed");
+      console.log("Deck state undelegated from ER:", tx);
+      return tx;
+    } catch (e) {
+      const message = parseAnchorError(e);
+      setError(message);
+      throw e;
+    } finally {
+      setLoading(false);
+    }
+  }, [erProgram, erProvider, publicKey, gameState.tablePDA, gameState.table]);
+
+  // ============================================================
+  // MagicBlock Delegation: Delegate ALL game state (hand + deck + seats)
+  // This is the main function to enable privacy mode for a hand
+  // ============================================================
+  const delegateGameState = useCallback(async (): Promise<void> => {
+    if (!program || !provider || !publicKey || !gameState.tablePDA || !gameState.table) {
+      throw new Error("Table not ready");
+    }
+
+    console.log("Delegating all game state to Ephemeral Rollup...");
+    setGameState((prev) => ({ ...prev, isDelegating: true }));
+
+    try {
+      // 1. Delegate hand state
+      console.log("Step 1: Delegating hand state...");
+      await delegateHand();
+
+      // 2. Delegate deck state
+      console.log("Step 2: Delegating deck state...");
+      await delegateDeck();
+
+      // 3. Delegate all occupied seats
+      const occupied = getOccupiedSeats(gameState.table.occupiedSeats, gameState.table.maxPlayers);
+      console.log(`Step 3: Delegating ${occupied.length} seats...`);
+
+      for (const seatIndex of occupied) {
+        const [seatPDA] = getSeatPDA(gameState.tablePDA!, seatIndex);
+
+        const tx = await program.methods
+          .delegateSeat(seatIndex)
+          .accounts({
+            payer: publicKey,
+            player: publicKey,
+            table: gameState.tablePDA,
+            seat: seatPDA,
+          })
+          .rpc();
+
+        await provider.connection.confirmTransaction(tx, "confirmed");
+        console.log(`Seat ${seatIndex} delegated:`, tx);
+      }
+
+      console.log("All game state delegated successfully!");
+      setGameState((prev) => ({
+        ...prev,
+        isDelegating: false,
+        isGameDelegated: true,
+        isSeatDelegated: true,
+      }));
+    } catch (e) {
+      console.error("Failed to delegate game state:", e);
+      setGameState((prev) => ({ ...prev, isDelegating: false }));
+      const message = parseAnchorError(e);
+      setError(message);
+      throw e;
+    }
+  }, [program, provider, publicKey, gameState.tablePDA, gameState.table, delegateHand, delegateDeck]);
+
+  // ============================================================
+  // MagicBlock Delegation: Undelegate ALL game state
+  // Called after showdown to commit state back to base layer
+  // ============================================================
+  const undelegateGameState = useCallback(async (): Promise<void> => {
+    if (!erProgram || !erProvider || !publicKey || !gameState.tablePDA || !gameState.table) {
+      throw new Error("Table not ready or ER not available");
+    }
+
+    console.log("Undelegating all game state from Ephemeral Rollup...");
+    setGameState((prev) => ({ ...prev, isUndelegating: true }));
+
+    try {
+      // 1. Undelegate all occupied seats
+      const occupied = getOccupiedSeats(gameState.table.occupiedSeats, gameState.table.maxPlayers);
+      console.log(`Step 1: Undelegating ${occupied.length} seats...`);
+
+      for (const seatIndex of occupied) {
+        const [seatPDA] = getSeatPDA(gameState.tablePDA!, seatIndex);
+
+        try {
+          // Get the seat account to get its bump
+          const seatAccount = await erProvider.connection.getAccountInfo(seatPDA);
+          if (seatAccount) {
+            const tx = await erProgram.methods
+              .undelegateSeat()
+              .accounts({
+                payer: publicKey,
+                table: gameState.tablePDA,
+                seat: seatPDA,
+              })
+              .rpc();
+
+            await erProvider.connection.confirmTransaction(tx, "confirmed");
+            console.log(`Seat ${seatIndex} undelegated:`, tx);
+          }
+        } catch (seatError) {
+          console.warn(`Failed to undelegate seat ${seatIndex}:`, seatError);
+          // Continue with other seats
+        }
+      }
+
+      // 2. Undelegate deck state
+      console.log("Step 2: Undelegating deck state...");
+      try {
+        await undelegateDeck();
+      } catch (deckError) {
+        console.warn("Failed to undelegate deck:", deckError);
+      }
+
+      // 3. Undelegate hand state
+      console.log("Step 3: Undelegating hand state...");
+      try {
+        await undelegateHand();
+      } catch (handError) {
+        console.warn("Failed to undelegate hand:", handError);
+      }
+
+      console.log("All game state undelegated successfully!");
+
+      // Wait for state to propagate to base layer
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      setGameState((prev) => ({
+        ...prev,
+        isUndelegating: false,
+        isGameDelegated: false,
+        isSeatDelegated: false,
+      }));
+
+      await refreshState();
+    } catch (e) {
+      console.error("Failed to undelegate game state:", e);
+      setGameState((prev) => ({ ...prev, isUndelegating: false }));
+      const message = parseAnchorError(e);
+      setError(message);
+      throw e;
+    }
+  }, [erProgram, erProvider, publicKey, gameState.tablePDA, gameState.table, undelegateHand, undelegateDeck, refreshState]);
+
+  // Player action (routes through ER when delegated for low latency)
   const playerAction = useCallback(
     async (action: ActionType): Promise<string> => {
       if (!program || !provider || !publicKey || !gameState.tablePDA || !gameState.table || gameState.currentPlayerSeat === null) {
         throw new Error("Not at table");
       }
 
+      // Check if accounts are actually delegated (regardless of local state)
+      const handNumber = BigInt(gameState.table.handNumber.toNumber());
+      const [handPDA] = getHandPDA(gameState.tablePDA, handNumber);
+      const isActuallyDelegated = await isAccountDelegatedByOwner(provider.connection, handPDA);
+
+      // Use ER when accounts are actually delegated
+      const useER = isActuallyDelegated && erProgram && erProvider;
+      const activeProgram = useER ? erProgram : program;
+      const activeProvider = useER ? erProvider : provider;
+
+      if (useER) {
+        console.log("Using Ephemeral Rollup for player action (accounts are delegated)");
+      } else if (gameState.isGameDelegated && !isActuallyDelegated) {
+        console.warn("Local state says delegated but accounts are on base layer - using base layer");
+        setGameState((prev) => ({ ...prev, isGameDelegated: false, isSeatDelegated: false }));
+      }
+
       setLoading(true);
       setError(null);
 
       try {
-        const handNumber = BigInt(gameState.table.handNumber.toNumber());
-        const [handPDA] = getHandPDA(gameState.tablePDA, handNumber);
+        // handNumber and handPDA already derived above
         const [deckPDA] = getDeckPDA(gameState.tablePDA, handNumber);
         const [seatPDA] = getSeatPDA(gameState.tablePDA, gameState.currentPlayerSeat);
 
@@ -642,7 +1360,7 @@ export function usePokerGame(): UsePokerGameResult {
             break;
         }
 
-        const tx = await program.methods
+        const tx = await activeProgram.methods
           .playerAction(actionArg)
           .accounts({
             player: publicKey,
@@ -653,7 +1371,7 @@ export function usePokerGame(): UsePokerGameResult {
           })
           .rpc();
 
-        await provider.connection.confirmTransaction(tx, "confirmed");
+        await activeProvider.connection.confirmTransaction(tx, "confirmed");
         await refreshState();
         return tx;
       } catch (e) {
@@ -664,10 +1382,12 @@ export function usePokerGame(): UsePokerGameResult {
         setLoading(false);
       }
     },
-    [program, provider, publicKey, gameState.tablePDA, gameState.table, gameState.currentPlayerSeat, refreshState]
+    [program, provider, erProgram, erProvider, publicKey, gameState.tablePDA, gameState.table, gameState.currentPlayerSeat, gameState.isSeatDelegated, refreshState]
   );
 
   // Showdown (authority can call immediately, anyone else after timeout)
+  // IMPORTANT: Showdown writes to table (sets status to Waiting), so it MUST run on base layer
+  // If game is delegated, we auto-undelegate first to commit state back to base layer
   const showdown = useCallback(async (): Promise<string> => {
     if (!program || !provider || !publicKey || !gameState.tablePDA || !gameState.table) {
       throw new Error("Table not ready");
@@ -677,18 +1397,97 @@ export function usePokerGame(): UsePokerGameResult {
     setError(null);
 
     try {
+      // If game is delegated, undelegate first since showdown writes to table
+      // Table is NOT delegated, so showdown MUST run on base layer
+      if (gameState.isGameDelegated && erProgram && erProvider) {
+        console.log("Game is delegated - undelegating before showdown (showdown writes to table)");
+
+        // Undelegate all game state
+        const occupied = getOccupiedSeats(gameState.table.occupiedSeats, gameState.table.maxPlayers);
+        console.log(`Undelegating ${occupied.length} seats, hand state, and deck state...`);
+
+        // 1. Undelegate all seats
+        for (const seatIndex of occupied) {
+          const [seatPDA] = getSeatPDA(gameState.tablePDA!, seatIndex);
+          try {
+            const seatAccount = await erProvider.connection.getAccountInfo(seatPDA);
+            if (seatAccount) {
+              const tx = await erProgram.methods
+                .undelegateSeat()
+                .accounts({
+                  payer: publicKey,
+                  table: gameState.tablePDA,
+                  seat: seatPDA,
+                })
+                .rpc();
+              await erProvider.connection.confirmTransaction(tx, "confirmed");
+              console.log(`Seat ${seatIndex} undelegated`);
+            }
+          } catch (seatError) {
+            console.warn(`Failed to undelegate seat ${seatIndex}:`, seatError);
+          }
+        }
+
+        // 2. Undelegate deck
+        try {
+          const handNumber = BigInt(gameState.table.handNumber.toNumber());
+          const [deckPDA] = getDeckPDA(gameState.tablePDA, handNumber);
+          const tx = await erProgram.methods
+            .undelegateDeck()
+            .accounts({
+              payer: publicKey,
+              authority: publicKey,
+              table: gameState.tablePDA,
+              deckState: deckPDA,
+            })
+            .rpc();
+          await erProvider.connection.confirmTransaction(tx, "confirmed");
+          console.log("Deck state undelegated");
+        } catch (deckError) {
+          console.warn("Failed to undelegate deck:", deckError);
+        }
+
+        // 3. Undelegate hand
+        try {
+          const handNumber = BigInt(gameState.table.handNumber.toNumber());
+          const [handPDA] = getHandPDA(gameState.tablePDA, handNumber);
+          const tx = await erProgram.methods
+            .undelegateHand()
+            .accounts({
+              payer: publicKey,
+              authority: publicKey,
+              table: gameState.tablePDA,
+              handState: handPDA,
+            })
+            .rpc();
+          await erProvider.connection.confirmTransaction(tx, "confirmed");
+          console.log("Hand state undelegated");
+        } catch (handError) {
+          console.warn("Failed to undelegate hand:", handError);
+        }
+
+        // Wait for state to propagate to base layer
+        console.log("Waiting for state to propagate to base layer...");
+        await new Promise(resolve => setTimeout(resolve, 3000));
+
+        setGameState((prev) => ({
+          ...prev,
+          isGameDelegated: false,
+          isSeatDelegated: false,
+        }));
+      }
+
+      // Always run showdown on base layer
       const handNumber = BigInt(gameState.table.handNumber.toNumber());
       const [handPDA] = getHandPDA(gameState.tablePDA, handNumber);
       const [vaultPDA] = getVaultPDA(gameState.tablePDA);
 
       // Get all player seat PDAs as remaining accounts
-      // Only include seats that actually exist on-chain
       const occupied = getOccupiedSeats(gameState.table.occupiedSeats, gameState.table.maxPlayers);
       const remainingAccounts: { pubkey: PublicKey; isSigner: boolean; isWritable: boolean }[] = [];
 
       for (const seatIndex of occupied) {
         const [seatPDA] = getSeatPDA(gameState.tablePDA!, seatIndex);
-        // Verify the account exists before adding
         try {
           const accountInfo = await provider.connection.getAccountInfo(seatPDA);
           if (accountInfo && accountInfo.data.length > 0) {
@@ -699,11 +1498,11 @@ export function usePokerGame(): UsePokerGameResult {
             });
           }
         } catch {
-          // Skip accounts that don't exist
           console.warn(`Seat ${seatIndex} account not found, skipping`);
         }
       }
 
+      console.log("Running showdown on base layer...");
       const tx = await program.methods
         .showdown()
         .accounts({
@@ -715,7 +1514,6 @@ export function usePokerGame(): UsePokerGameResult {
         .remainingAccounts(remainingAccounts)
         .rpc();
 
-      // Wait for confirmation before refreshing state
       await provider.connection.confirmTransaction(tx, "confirmed");
       await refreshState();
       return tx;
@@ -726,27 +1524,44 @@ export function usePokerGame(): UsePokerGameResult {
     } finally {
       setLoading(false);
     }
-  }, [program, provider, publicKey, gameState.tablePDA, gameState.table, refreshState]);
+  }, [program, provider, erProgram, erProvider, publicKey, gameState.tablePDA, gameState.table, gameState.isGameDelegated, refreshState]);
 
   // Timeout a player who hasn't acted in time (anyone can call)
+  // Routes through ER when seats are delegated
   const timeoutPlayer = useCallback(async (): Promise<string> => {
     if (!program || !provider || !publicKey || !gameState.tablePDA || !gameState.table || !gameState.handState) {
       throw new Error("Table not ready");
+    }
+
+    // Check if accounts are actually delegated (regardless of local state)
+    const handNumber = BigInt(gameState.table.handNumber.toNumber());
+    const [handPDA] = getHandPDA(gameState.tablePDA, handNumber);
+    const isActuallyDelegated = await isAccountDelegatedByOwner(provider.connection, handPDA);
+
+    // Use ER when accounts are actually delegated
+    const useER = isActuallyDelegated && erProgram && erProvider;
+    const activeProgram = useER ? erProgram : program;
+    const activeProvider = useER ? erProvider : provider;
+
+    if (useER) {
+      console.log("Using Ephemeral Rollup for timeout_player (accounts are delegated)");
+    } else if (gameState.isGameDelegated && !isActuallyDelegated) {
+      console.warn("Local state says delegated but accounts are on base layer - using base layer");
+      setGameState((prev) => ({ ...prev, isGameDelegated: false, isSeatDelegated: false }));
     }
 
     setLoading(true);
     setError(null);
 
     try {
-      const handNumber = BigInt(gameState.table.handNumber.toNumber());
-      const [handPDA] = getHandPDA(gameState.tablePDA, handNumber);
+      // handNumber and handPDA already derived above
       const [deckPDA] = getDeckPDA(gameState.tablePDA, handNumber);
 
       // Get the seat of the player whose turn it is
       const actionOn = gameState.handState.actionOn;
       const [timedOutSeatPDA] = getSeatPDA(gameState.tablePDA, actionOn);
 
-      const tx = await program.methods
+      const tx = await activeProgram.methods
         .timeoutPlayer()
         .accounts({
           caller: publicKey,
@@ -757,7 +1572,7 @@ export function usePokerGame(): UsePokerGameResult {
         })
         .rpc();
 
-      await provider.connection.confirmTransaction(tx, "confirmed");
+      await activeProvider.connection.confirmTransaction(tx, "confirmed");
       await refreshState();
       return tx;
     } catch (e) {
@@ -767,7 +1582,7 @@ export function usePokerGame(): UsePokerGameResult {
     } finally {
       setLoading(false);
     }
-  }, [program, provider, publicKey, gameState.tablePDA, gameState.table, gameState.handState, refreshState]);
+  }, [program, provider, erProgram, erProvider, publicKey, gameState.tablePDA, gameState.table, gameState.handState, gameState.isSeatDelegated, refreshState]);
 
   return {
     gameState,
@@ -781,7 +1596,23 @@ export function usePokerGame(): UsePokerGameResult {
     playerAction,
     showdown,
     timeoutPlayer,
+    // MagicBlock VRF
+    requestShuffle,
+    dealCardsVrf,
+    // MagicBlock Delegation
+    delegateSeat,
+    delegateHand,
+    delegateDeck,
+    delegateGameState,
+    undelegateSeat,
+    undelegateHand,
+    undelegateDeck,
+    undelegateGameState,
+    // Utilities
     refreshState,
     setTableId,
+    setUseVrf,
+    setUsePrivacyMode,
+    checkDelegationStatus,
   };
 }

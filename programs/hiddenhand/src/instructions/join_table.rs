@@ -91,8 +91,8 @@ pub fn handler(ctx: Context<JoinTable>, seat_index: u8, buy_in: u64) -> Result<(
     player_seat.chips = buy_in;
     player_seat.current_bet = 0;
     player_seat.total_bet_this_hand = 0;
-    player_seat.hole_card_1 = 0;
-    player_seat.hole_card_2 = 0;
+    player_seat.hole_card_1 = 255; // Sentinel: not dealt yet
+    player_seat.hole_card_2 = 255; // Sentinel: not dealt yet
     player_seat.status = PlayerStatus::Sitting;
     player_seat.has_acted = false;
     player_seat.bump = ctx.bumps.player_seat;

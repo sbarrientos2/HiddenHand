@@ -83,10 +83,11 @@ export interface WalletSigner {
 }
 
 /**
- * Convert a BigInt handle to hex string (for Inco SDK)
+ * Convert a BigInt handle to string format for Inco SDK
+ * The SDK internally does BigInt(handle), so we pass decimal strings
  */
-export function handleToHex(handle: bigint): string {
-  return handle.toString(16).padStart(32, "0");
+export function handleToString(handle: bigint): string {
+  return handle.toString(10); // Decimal string, not hex
 }
 
 /**
@@ -106,8 +107,8 @@ export async function decryptCards(
   // Dynamic import to avoid SSR issues
   const { decrypt } = await import("@inco/solana-sdk");
 
-  // Convert handles to hex strings (Inco SDK format)
-  const handleStrings = handles.map((h) => handleToHex(h));
+  // Convert handles to decimal strings (Inco SDK does BigInt(handle) internally)
+  const handleStrings = handles.map((h) => handleToString(h));
 
   try {
     // Call Inco's decrypt with wallet signing for authentication
@@ -116,13 +117,13 @@ export async function decryptCards(
       signMessage: wallet.signMessage,
     });
 
-    // Extract plaintext values - they come as hex strings
+    // Extract plaintext values - they come as DECIMAL strings (not hex!)
     const plaintexts = result.plaintexts.map((pt: string) => {
-      // Parse hex string to number
-      const value = parseInt(pt, 16);
+      // Parse as decimal (base 10), NOT hex
+      const value = parseInt(pt, 10);
       // Card value should be 0-51
       if (value < 0 || value > 51) {
-        console.warn(`Unexpected card value: ${value}`);
+        console.warn(`[Inco] Unexpected card value: ${value} from "${pt}"`);
       }
       return value;
     });

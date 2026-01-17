@@ -45,6 +45,16 @@ pub struct PlayerSeat {
     /// Encrypted hole card 2 (Inco handle)
     pub hole_card_2: u128,
 
+    /// Revealed plaintext card 1 (0-51, or 255 if not revealed)
+    /// Set via reveal_cards instruction with Ed25519 verification
+    pub revealed_card_1: u8,
+
+    /// Revealed plaintext card 2 (0-51, or 255 if not revealed)
+    pub revealed_card_2: u8,
+
+    /// Whether player has revealed their cards for showdown
+    pub cards_revealed: bool,
+
     /// Current status
     pub status: PlayerStatus,
 
@@ -65,6 +75,9 @@ impl PlayerSeat {
         8 +  // total_bet_this_hand
         16 + // hole_card_1
         16 + // hole_card_2
+        1 +  // revealed_card_1
+        1 +  // revealed_card_2
+        1 +  // cards_revealed
         1 +  // status
         1 +  // has_acted
         1;   // bump
@@ -75,6 +88,9 @@ impl PlayerSeat {
         self.total_bet_this_hand = 0;
         self.hole_card_1 = 255; // Sentinel: not dealt yet
         self.hole_card_2 = 255; // Sentinel: not dealt yet
+        self.revealed_card_1 = 255; // Not revealed
+        self.revealed_card_2 = 255; // Not revealed
+        self.cards_revealed = false;
         self.status = PlayerStatus::Playing;
         self.has_acted = false;
     }

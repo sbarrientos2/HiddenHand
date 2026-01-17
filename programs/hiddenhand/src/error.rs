@@ -106,4 +106,19 @@ pub enum HiddenHandError {
 
     #[msg("Invalid account count - expected multiple of 3 for encryption")]
     InvalidAccountCount,
+
+    #[msg("Cards have already been revealed")]
+    CardsAlreadyRevealed,
+
+    #[msg("Player is not active (folded or not playing)")]
+    PlayerNotActive,
+
+    #[msg("Invalid card value - must be 0-51")]
+    InvalidCard,
+
+    #[msg("Ed25519 signature verification failed")]
+    Ed25519VerificationFailed,
+
+    #[msg("All active players must reveal before showdown can complete")]
+    PlayersNotRevealed,
 }

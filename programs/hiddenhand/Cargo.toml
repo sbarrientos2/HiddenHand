@@ -33,6 +33,9 @@ ephemeral-rollups-sdk = { version = "0.6.5", features = ["anchor", "disable-real
 ephemeral-vrf-sdk = { version = "0.2.1", features = ["anchor"] }
 constant_time_eq = "=0.3.1"
 
+# SHA256 hashing for Ed25519 message verification
+sha2 = "0.10"
+
 # Note: LiteSVM requires solana-sdk version matching anchor-lang's requirements
 # For now, we use standard Rust tests which don't need these dependencies
 # TODO: Add LiteSVM once solana-sdk versions align with Anchor 0.32.1

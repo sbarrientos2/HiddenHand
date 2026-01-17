@@ -63,7 +63,11 @@ export const Card: FC<CardProps> = ({
   } : {};
   const animationClass = dealt ? "animate-deal" : "";
 
-  if (hidden || card === null || card === 255) {
+  // Validate card is in valid range (0-51) - treat invalid cards as hidden
+  // Also handle undefined (which can happen if decryption returns fewer cards than expected)
+  const isInvalidCard = card != null && (card < 0 || card > 51);
+
+  if (hidden || card == null || card === 255 || isInvalidCard) {
     // Premium card back
     return (
       <div

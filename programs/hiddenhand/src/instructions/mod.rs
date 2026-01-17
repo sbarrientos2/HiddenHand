@@ -6,6 +6,9 @@ pub mod player_action;
 pub mod showdown;
 pub mod start_hand;
 
+// Atomic encrypted dealing (P0 security fix)
+pub mod deal_cards_encrypted;
+
 // MagicBlock VRF instructions for provably fair shuffling
 pub mod request_shuffle;
 pub mod callback_shuffle;
@@ -25,12 +28,17 @@ pub mod timeout_player;
 // Inco encryption (Phase 2)
 pub mod encrypt_hole_cards;
 
+// Reveal cards for showdown (with Ed25519 verification)
+pub mod reveal_cards;
+
 // Re-export everything for convenience
 // The `handler` name conflicts are expected and handled by Anchor's program macro
 #[allow(ambiguous_glob_reexports)]
 pub use create_table::*;
 #[allow(ambiguous_glob_reexports)]
 pub use deal_cards::*;
+#[allow(ambiguous_glob_reexports)]
+pub use deal_cards_encrypted::*;
 #[allow(ambiguous_glob_reexports)]
 pub use join_table::*;
 #[allow(ambiguous_glob_reexports)]
@@ -63,3 +71,5 @@ pub use undelegate_deck::*;
 pub use timeout_player::*;
 #[allow(ambiguous_glob_reexports)]
 pub use encrypt_hole_cards::*;
+#[allow(ambiguous_glob_reexports)]
+pub use reveal_cards::*;

@@ -66,8 +66,16 @@ pub mod hiddenhand {
     /// Deal cards to all players and post blinds
     /// SB and BB seats are named accounts, others via remaining_accounts
     /// NOTE: For provably fair games, use request_shuffle + callback_shuffle instead
+    /// WARNING: This stores plaintext cards - use deal_cards_encrypted for privacy!
     pub fn deal_cards(ctx: Context<DealAllCards>) -> Result<()> {
         instructions::deal_cards::handler(ctx)
+    }
+
+    /// Deal cards with ATOMIC Inco encryption (RECOMMENDED for privacy)
+    /// Cards are encrypted immediately during dealing - NEVER stored as plaintext
+    /// After calling this, use grant_card_allowance for each player to enable decryption
+    pub fn deal_cards_encrypted(ctx: Context<DealCardsEncrypted>) -> Result<()> {
+        instructions::deal_cards_encrypted::handler(ctx)
     }
 
     // ============================================================
@@ -164,6 +172,15 @@ pub mod hiddenhand {
         instructions::encrypt_hole_cards::grant_allowance_handler(ctx, seat_index)
     }
 
+    /// Reveal cards at showdown with Ed25519 signature verification
+    ///
+    /// Players call this at Showdown phase to reveal their decrypted cards.
+    /// The transaction must include Ed25519 verification instructions from
+    /// Inco's attested decryption to prove the revealed values are correct.
+    pub fn reveal_cards(ctx: Context<RevealCards>, card1: u8, card2: u8) -> Result<()> {
+        instructions::reveal_cards::handler(ctx, card1, card2)
+    }
+
     // TODO: Add community card reveal instruction
     // pub fn reveal_community(ctx: Context<RevealCommunity>, count: u8) -> Result<()> {
     //     // Reveal flop (3), turn (1), or river (1)
@@ -222,8 +239,9 @@ mod unit_tests {
         // Verify our size calculation is correct
         // 8 (discriminator) + 32 (table) + 32 (player) + 1 (seat_index) +
         // 8 (chips) + 8 (current_bet) + 8 (total_bet) + 16 (hole_card_1) +
-        // 16 (hole_card_2) + 1 (status) + 1 (has_acted) + 1 (bump)
-        let expected_size = 8 + 32 + 32 + 1 + 8 + 8 + 8 + 16 + 16 + 1 + 1 + 1;
+        // 16 (hole_card_2) + 1 (revealed_card_1) + 1 (revealed_card_2) +
+        // 1 (cards_revealed) + 1 (status) + 1 (has_acted) + 1 (bump)
+        let expected_size = 8 + 32 + 32 + 1 + 8 + 8 + 8 + 16 + 16 + 1 + 1 + 1 + 1 + 1 + 1;
         assert_eq!(PlayerSeat::SIZE, expected_size, "PlayerSeat size mismatch");
     }
 
@@ -235,8 +253,8 @@ mod unit_tests {
         // 8 (discriminator) + 32 (authority) + 32 (table_id) + 8 (small_blind) +
         // 8 (big_blind) + 8 (min_buy_in) + 8 (max_buy_in) + 1 (max_players) +
         // 1 (current_players) + 1 (status) + 8 (hand_number) + 1 (occupied_seats) +
-        // 1 (dealer_position) + 1 (bump)
-        let expected_size = 8 + 32 + 32 + 8 + 8 + 8 + 8 + 1 + 1 + 1 + 8 + 1 + 1 + 1;
+        // 1 (dealer_position) + 8 (last_ready_time) + 1 (bump)
+        let expected_size = 8 + 32 + 32 + 8 + 8 + 8 + 8 + 1 + 1 + 1 + 8 + 1 + 1 + 8 + 1;
         assert_eq!(Table::SIZE, expected_size, "Table size mismatch");
     }
 

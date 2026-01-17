@@ -59,7 +59,7 @@ HiddenHand is a fully on-chain Texas Hold'em poker game with cryptographic priva
 - **Location**: `/programs/hiddenhand/`
 - **Framework**: Anchor 0.32.1
 - **Network**: Solana Devnet
-- **Program ID**: `7skCDLugS15d6cfrtZZCc5rpe5sDB998WjVBacP5qsTp`
+- **Program ID**: `HS3GdhRBU3jMT4G6ogKVktKaibqsMhPRhDhNsmgzeB8Q`
 
 ### MagicBlock Integration (ACTIVE)
 - **VRF SDK**: `ephemeral-vrf-sdk = "0.2.1"` - Verifiable random function

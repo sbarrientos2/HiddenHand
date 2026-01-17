@@ -4,7 +4,7 @@ import { useWallet } from "@solana/wallet-adapter-react";
 import { WalletButton } from "@/components/WalletButton";
 import { PokerTable } from "@/components/PokerTable";
 import { ActionPanel } from "@/components/ActionPanel";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { usePokerGame, type ActionType } from "@/hooks/usePokerGame";
 import { ActionTimer } from "@/components/ActionTimer";
 import { OpponentTimer } from "@/components/OpponentTimer";
@@ -41,7 +41,37 @@ export default function Home() {
     undelegateSeat,
     undelegateGameState,
     setUsePrivacyMode,
+    // Inco FHE Encryption
+    encryptHoleCards,
+    grantCardAllowance,
+    encryptAndGrantCards,
+    encryptAllPlayersCards,
+    grantAllPlayersAllowances,
+    decryptMyCards,
+    revealCards,
+    setUseIncoPrivacy,
   } = usePokerGame();
+
+  // Expose hook functions to window for console testing (only once on mount)
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const pokerGame = (window as any).__pokerGame || {};
+      // Only update functions, not gameState (to avoid constant updates)
+      pokerGame.encryptHoleCards = encryptHoleCards;
+      pokerGame.grantCardAllowance = grantCardAllowance;
+      pokerGame.encryptAndGrantCards = encryptAndGrantCards;
+      pokerGame.encryptAllPlayersCards = encryptAllPlayersCards;
+      pokerGame.grantAllPlayersAllowances = grantAllPlayersAllowances;
+      pokerGame.decryptMyCards = decryptMyCards;
+      pokerGame.revealCards = revealCards;
+      pokerGame.delegateGameState = delegateGameState;
+      pokerGame.undelegateGameState = undelegateGameState;
+      // Getter for fresh gameState (avoids stale closure)
+      pokerGame.getGameState = () => gameState;
+      (window as any).__pokerGame = pokerGame;
+    }
+  }, [encryptHoleCards, grantCardAllowance, encryptAndGrantCards, encryptAllPlayersCards, grantAllPlayersAllowances, decryptMyCards, revealCards, delegateGameState, undelegateGameState]);
 
   // Transaction toast notifications
   const {
@@ -341,14 +371,56 @@ export default function Home() {
   };
 
   // Map game state players to component format
-  const playersForTable = gameState.players.map((p) => ({
-    seatIndex: p.seatIndex,
-    player: p.player,
-    chips: p.chips,
-    currentBet: p.currentBet,
-    holeCards: p.holeCards,
-    status: p.status,
-  }));
+  // Map game state players to component format (memoized to avoid recalculating every render)
+  // Use decrypted cards for current player if available
+  // Also include revealed cards for showdown display
+  const playersForTable = useMemo(() => {
+    return gameState.players.map((p) => {
+      const isCurrentPlayer = p.player === publicKey?.toString();
+      // If this is the current player and we have decrypted cards, use those
+      const holeCards: [number | null, number | null] =
+        isCurrentPlayer && gameState.decryptedCards[0] !== null
+          ? gameState.decryptedCards
+          : p.holeCards;
+
+      return {
+        seatIndex: p.seatIndex,
+        player: p.player,
+        chips: p.chips,
+        currentBet: p.currentBet,
+        holeCards,
+        status: p.status,
+        isEncrypted: p.isEncrypted && !gameState.decryptedCards[0], // Still encrypted if not decrypted
+        // Include revealed cards for showdown display
+        revealedCards: p.revealedCards,
+        cardsRevealed: p.cardsRevealed,
+      };
+    });
+  }, [gameState.players, gameState.decryptedCards, publicKey]);
+
+  // Determine if we're in showdown display mode (Showdown or Settled with revealed cards)
+  const isShowdownPhase = gameState.phase === "Showdown" || gameState.phase === "Settled";
+
+  // Check if all active players have revealed their cards for showdown
+  // Active players are those with status "playing" or "allin" (not folded)
+  const allPlayersRevealed = useMemo(() => {
+    const activePlayers = gameState.players.filter(
+      p => p.status === "playing" || p.status === "allin"
+    );
+    // If no active players, allow showdown (edge case)
+    if (activePlayers.length === 0) return true;
+    // If only one player remains (everyone else folded), no reveal needed - they win automatically
+    if (activePlayers.length === 1) return true;
+    // Check if all active players have revealed their cards
+    return activePlayers.every(p => p.cardsRevealed);
+  }, [gameState.players]);
+
+  // Count how many players still need to reveal
+  const playersNeedingReveal = useMemo(() => {
+    return gameState.players.filter(
+      p => (p.status === "playing" || p.status === "allin") && !p.cardsRevealed
+    ).length;
+  }, [gameState.players]);
 
   return (
     <main className="min-h-screen relative">
@@ -664,9 +736,9 @@ export default function Home() {
                     )}
                   </div>
 
-                  {/* Privacy Mode Toggle */}
+                  {/* ER Privacy Mode Toggle (MagicBlock) */}
                   <div className="flex items-center gap-2 glass-dark px-3 py-1.5 rounded-lg">
-                    <span className="text-[var(--text-muted)] text-xs uppercase tracking-wider">Privacy</span>
+                    <span className="text-[var(--text-muted)] text-xs uppercase tracking-wider">ER</span>
                     <button
                       onClick={() => setUsePrivacyMode(!gameState.usePrivacyMode)}
                       className={`relative w-10 h-5 rounded-full transition-colors ${
@@ -680,7 +752,27 @@ export default function Home() {
                       />
                     </button>
                     {gameState.usePrivacyMode && (
-                      <span className="text-emerald-400 text-xs font-medium">Auto-Delegate</span>
+                      <span className="text-emerald-400 text-xs font-medium">Fast Mode</span>
+                    )}
+                  </div>
+
+                  {/* Inco FHE Privacy Toggle (Cryptographic) */}
+                  <div className="flex items-center gap-2 glass-dark px-3 py-1.5 rounded-lg">
+                    <span className="text-[var(--text-muted)] text-xs uppercase tracking-wider">Inco</span>
+                    <button
+                      onClick={() => setUseIncoPrivacy(!gameState.useIncoPrivacy)}
+                      className={`relative w-10 h-5 rounded-full transition-colors ${
+                        gameState.useIncoPrivacy ? "bg-cyan-500" : "bg-gray-600"
+                      }`}
+                    >
+                      <span
+                        className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
+                          gameState.useIncoPrivacy ? "translate-x-5" : ""
+                        }`}
+                      />
+                    </button>
+                    {gameState.useIncoPrivacy && (
+                      <span className="text-cyan-400 text-xs font-medium">FHE Encrypted</span>
                     )}
                   </div>
 
@@ -816,6 +908,72 @@ export default function Home() {
                             </span>
                           )
                         )}
+
+                        {/* Inco FHE Encryption - show after cards are dealt */}
+                        {gameState.phase === "PreFlop" && gameState.useIncoPrivacy && !gameState.areCardsEncrypted && !gameState.isEncrypting && (
+                          <button
+                            onClick={async () => {
+                              try {
+                                await encryptAllPlayersCards();
+                                addGameEvent("privacy", "Cards encrypted with Inco FHE");
+                              } catch (e) {
+                                console.error("Encryption failed:", e);
+                              }
+                            }}
+                            disabled={loading}
+                            className="btn-info px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50 flex items-center gap-2"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                            </svg>
+                            Encrypt Cards (Inco)
+                          </button>
+                        )}
+                        {/* Encryption in progress */}
+                        {gameState.isEncrypting && (
+                          <div className="text-cyan-400 text-sm flex items-center gap-2">
+                            <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                            Encrypting cards...
+                          </div>
+                        )}
+                        {/* Cards encrypted indicator */}
+                        {gameState.areCardsEncrypted && (
+                          <div className="flex items-center gap-2 glass-dark px-3 py-1.5 rounded-lg border border-cyan-500/30">
+                            <svg className="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                            </svg>
+                            <span className="text-cyan-400 text-xs font-medium">FHE Encrypted</span>
+                          </div>
+                        )}
+                        {/* Grant Allowances button - for atomic encryption where cards are encrypted but allowances need to be granted */}
+                        {gameState.areCardsEncrypted && !gameState.areAllowancesGranted && !gameState.isEncrypting && (
+                          <button
+                            onClick={async () => {
+                              try {
+                                await grantAllPlayersAllowances();
+                                addGameEvent("privacy", "Decryption allowances granted for all players");
+                              } catch (e) {
+                                console.error("Failed to grant allowances:", e);
+                              }
+                            }}
+                            disabled={loading}
+                            className="btn-info px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50 flex items-center gap-2"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                            </svg>
+                            Grant Allowances
+                          </button>
+                        )}
+                        {/* Allowances granted indicator */}
+                        {gameState.areCardsEncrypted && gameState.areAllowancesGranted && (
+                          <div className="flex items-center gap-2 glass-dark px-3 py-1.5 rounded-lg border border-green-500/30">
+                            <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                            <span className="text-green-400 text-xs font-medium">Ready to Decrypt</span>
+                          </div>
+                        )}
                       </>
                     );
                   })()}
@@ -823,13 +981,26 @@ export default function Home() {
                   {/* Showdown */}
                   {(gameState.phase === "Showdown" ||
                     (gameState.phase === "Settled" && gameState.pot > 0)) && (
-                    <button
-                      onClick={() => showdown()}
-                      disabled={loading}
-                      className="btn-gold px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50"
-                    >
-                      {gameState.phase === "Showdown" ? "Run Showdown" : "Award Pot"}
-                    </button>
+                    <>
+                      {allPlayersRevealed ? (
+                        <button
+                          onClick={() => showdown()}
+                          disabled={loading}
+                          className="btn-gold px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50"
+                        >
+                          {gameState.phase === "Showdown" ? "Run Showdown" : "Award Pot"}
+                        </button>
+                      ) : (
+                        <div className="glass-dark px-4 py-2.5 rounded-xl text-center">
+                          <p className="text-yellow-400 text-sm font-medium">
+                            Waiting for {playersNeedingReveal} player{playersNeedingReveal > 1 ? 's' : ''} to reveal cards
+                          </p>
+                          <p className="text-xs text-[var(--text-muted)] mt-1">
+                            All players must reveal before showdown
+                          </p>
+                        </div>
+                      )}
+                    </>
                   )}
 
                   {/* Undelegate after hand is settled (if delegated) */}
@@ -901,7 +1072,9 @@ export default function Home() {
             )}
 
             {/* Showdown button for non-authority players (after timeout) */}
+            {/* Only show when all players have revealed their cards */}
             {!gameState.isAuthority && currentPlayer && gameState.table &&
+              allPlayersRevealed &&
               (gameState.phase === "Showdown" ||
                 (gameState.phase === "Settled" && gameState.pot > 0)) && (
               <ShowdownTimeoutPanel
@@ -926,7 +1099,147 @@ export default function Home() {
                 currentPlayerAddress={publicKey?.toString() ?? ""}
                 smallBlind={gameState.smallBlind}
                 bigBlind={gameState.bigBlind}
+                isShowdownPhase={isShowdownPhase}
               />
+            )}
+
+            {/* Showdown Results Banner - shows after showdown when pot has been distributed */}
+            {gameState.phase === "Settled" && gameState.pot === 0 && gameState.players.some(p => p.cardsRevealed) && (
+              <div className="max-w-lg mx-auto glass border border-amber-500/30 rounded-2xl p-5 text-center mb-4">
+                <div className="flex items-center justify-center gap-3 mb-2">
+                  <svg className="w-6 h-6 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+                  </svg>
+                  <span className="text-amber-300 font-bold text-lg">Showdown Complete</span>
+                  <svg className="w-6 h-6 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+                  </svg>
+                </div>
+                <p className="text-[var(--text-secondary)] text-sm">
+                  All players&apos; cards are now visible. Review the results above!
+                </p>
+                <p className="text-[var(--text-muted)] text-xs mt-2">
+                  Cards will reset when a new hand is started
+                </p>
+              </div>
+            )}
+
+            {/* Decrypt My Cards button - shows when current player has encrypted cards AND allowances granted */}
+            {/* Button appears for all players once authority grants allowances (detected on-chain) */}
+            {/* Also check phase is not Dealing (cards must be dealt first) */}
+            {currentPlayer && currentPlayer.isEncrypted && !gameState.decryptedCards[0] &&
+             gameState.areAllowancesGranted &&
+             gameState.tableStatus === "Playing" &&
+             gameState.phase !== "Settled" && gameState.phase !== "Dealing" && (
+              <div className="max-w-md mx-auto glass border border-cyan-500/30 rounded-2xl p-5 text-center">
+                <div className="flex items-center justify-center gap-2 mb-3">
+                  <svg className="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                  <span className="text-cyan-400 font-semibold">
+                    Your cards are encrypted
+                  </span>
+                </div>
+                <p className="text-[var(--text-muted)] text-sm mb-4">
+                  Click below to decrypt and view your hole cards
+                </p>
+                {gameState.isDecrypting ? (
+                  <div className="text-cyan-400 text-sm flex items-center justify-center gap-2">
+                    <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                    Decrypting with Inco...
+                  </div>
+                ) : (
+                  <button
+                    onClick={async () => {
+                      try {
+                        await decryptMyCards();
+                        addGameEvent("privacy", "Cards decrypted via Inco FHE");
+                      } catch (e) {
+                        console.error("Decryption failed:", e);
+                      }
+                    }}
+                    disabled={loading}
+                    className="btn-info px-6 py-3 rounded-xl font-semibold disabled:opacity-50 flex items-center gap-2 mx-auto"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+                    </svg>
+                    Decrypt My Cards
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Reveal Cards for Showdown */}
+            {/* Only show when: in Showdown phase, player is active (not folded), and multiple players remain */}
+            {currentPlayer &&
+             gameState.phase === "Showdown" &&
+             currentPlayer.status !== "folded" &&
+             activePlayers.length > 1 &&
+             gameState.decryptedCards[0] !== null &&
+             gameState.decryptedCards[1] !== null &&
+             !currentPlayer.cardsRevealed && (
+              <div className="max-w-md mx-auto glass border border-amber-500/30 rounded-2xl p-5 text-center animate-glow-reveal">
+                <div className="flex items-center justify-center gap-2 mb-3">
+                  <svg className="w-6 h-6 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  </svg>
+                  <span className="text-amber-300 font-semibold">
+                    Showdown - Reveal Your Cards
+                  </span>
+                </div>
+                <p className="text-[var(--text-muted)] text-sm mb-4">
+                  Submit your decrypted cards to the blockchain for hand evaluation
+                </p>
+                {gameState.isRevealing ? (
+                  <div className="text-amber-400 text-sm flex items-center justify-center gap-2">
+                    <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                    Revealing cards on-chain...
+                  </div>
+                ) : (
+                  <button
+                    onClick={async () => {
+                      try {
+                        await revealCards();
+                        addGameEvent("cards", "Cards revealed for showdown");
+                      } catch (e) {
+                        console.error("Reveal failed:", e);
+                      }
+                    }}
+                    disabled={loading}
+                    className="bg-amber-600 hover:bg-amber-500 text-white px-6 py-3 rounded-xl font-semibold disabled:opacity-50 flex items-center gap-2 mx-auto transition-colors"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                    Reveal Cards
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Cards Revealed Confirmation */}
+            {/* Only show when: in Showdown phase, player is active (not folded), and multiple players remain */}
+            {currentPlayer &&
+             gameState.phase === "Showdown" &&
+             currentPlayer.status !== "folded" &&
+             activePlayers.length > 1 &&
+             currentPlayer.cardsRevealed && (
+              <div className="max-w-md mx-auto glass border border-green-500/30 rounded-2xl p-5 text-center">
+                <div className="flex items-center justify-center gap-2 mb-2">
+                  <svg className="w-6 h-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="text-green-300 font-semibold">
+                    Cards Revealed
+                  </span>
+                </div>
+                <p className="text-[var(--text-muted)] text-sm">
+                  Waiting for other players to reveal their cards...
+                </p>
+              </div>
             )}
 
             {/* All-in indicator */}

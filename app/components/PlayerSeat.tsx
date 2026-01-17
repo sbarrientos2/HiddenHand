@@ -9,6 +9,7 @@ interface PlayerSeatProps {
   chips: number;
   currentBet: number;
   holeCards: [number | null, number | null];
+  revealedCards?: [number | null, number | null]; // Cards revealed at showdown
   isActive: boolean;
   isDealer: boolean;
   isSmallBlind: boolean;
@@ -16,6 +17,8 @@ interface PlayerSeatProps {
   isTurn: boolean;
   status: "empty" | "sitting" | "playing" | "folded" | "allin";
   isCurrentPlayer: boolean;
+  isShowdownPhase?: boolean; // True during Showdown or Settled phase
+  cardsRevealed?: boolean; // Whether this player has revealed their cards
 }
 
 export const PlayerSeat: FC<PlayerSeatProps> = ({
@@ -24,6 +27,7 @@ export const PlayerSeat: FC<PlayerSeatProps> = ({
   chips,
   currentBet,
   holeCards,
+  revealedCards,
   isActive,
   isDealer,
   isSmallBlind,
@@ -31,10 +35,21 @@ export const PlayerSeat: FC<PlayerSeatProps> = ({
   isTurn,
   status,
   isCurrentPlayer,
+  isShowdownPhase = false,
+  cardsRevealed = false,
 }) => {
   const isEmpty = status === "empty";
   const isFolded = status === "folded";
   const isAllIn = status === "allin";
+
+  // Determine which cards to display and whether to show them
+  // During showdown/settled: show revealed cards for players who have revealed
+  // During regular play: only show to current player
+  const hasRevealedCards = cardsRevealed && revealedCards?.[0] !== null && revealedCards?.[1] !== null;
+  const showCards = isCurrentPlayer || (isShowdownPhase && hasRevealedCards);
+  const displayCards: [number | null, number | null] = hasRevealedCards && isShowdownPhase
+    ? revealedCards!
+    : holeCards;
 
   // Format wallet address
   const shortAddress = player
@@ -144,13 +159,23 @@ export const PlayerSeat: FC<PlayerSeatProps> = ({
           {/* Player cards */}
           <div className={`relative ${isFolded ? "grayscale opacity-60" : ""}`}>
             <CardHand
-              cards={holeCards}
-              hidden={!isCurrentPlayer && status !== "folded"}
+              cards={displayCards}
+              hidden={!showCards && status !== "folded"}
               size="sm"
               dealt
             />
+            {/* Card glow for revealed cards at showdown */}
+            {isShowdownPhase && hasRevealedCards && !isCurrentPlayer && (
+              <div
+                className="absolute -inset-2 -z-10 rounded-lg"
+                style={{
+                  background: "radial-gradient(ellipse at center, rgba(212, 160, 18, 0.15) 0%, transparent 70%)",
+                  filter: "blur(6px)",
+                }}
+              />
+            )}
             {/* Card shadow/glow for current player */}
-            {isCurrentPlayer && !isFolded && (
+            {isCurrentPlayer && !isFolded && !isShowdownPhase && (
               <div
                 className="absolute -inset-2 -z-10 rounded-lg"
                 style={{

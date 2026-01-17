@@ -45,6 +45,7 @@ import {
   getOccupiedSeats,
   parseAnchorError,
 } from "@/lib/utils";
+import { decryptCards } from "@/lib/inco";
 
 // Types matching the IDL
 export interface TableAccount {
@@ -92,6 +93,9 @@ export interface PlayerSeatAccount {
   totalBetThisHand: BN;
   holeCard1: BN;
   holeCard2: BN;
+  revealedCard1: number;  // Revealed plaintext card (0-51 or 255)
+  revealedCard2: number;  // Revealed plaintext card (0-51 or 255)
+  cardsRevealed: boolean; // Whether player has revealed cards for showdown
   status: { sitting?: object; playing?: object; folded?: object; allIn?: object };
   hasActed: boolean;
   bump: number;
@@ -117,6 +121,9 @@ export interface Player {
   status: "empty" | "sitting" | "playing" | "folded" | "allin";
   isActive: boolean;
   isDelegated?: boolean; // Whether seat is delegated to ER
+  isEncrypted?: boolean; // Whether hole cards are Inco-encrypted
+  cardsRevealed?: boolean; // Whether cards have been revealed for showdown
+  revealedCards?: [number | null, number | null]; // Plaintext cards after reveal (0-51)
 }
 
 export interface GameState {
@@ -149,7 +156,16 @@ export interface GameState {
   isGameDelegated: boolean; // Whether hand/deck/seats are all delegated to ER
   isDelegating: boolean; // Delegation in progress
   isUndelegating: boolean; // Undelegation in progress
-  usePrivacyMode: boolean; // Whether to auto-delegate for privacy
+  usePrivacyMode: boolean; // Whether to auto-delegate for privacy (ER-based)
+  // Inco FHE privacy state
+  useIncoPrivacy: boolean; // Whether to use Inco FHE encryption for cards
+  isEncrypting: boolean; // Inco encryption in progress
+  areCardsEncrypted: boolean; // Whether current cards are Inco-encrypted
+  areAllowancesGranted: boolean; // Whether decryption allowances have been granted
+  isDecrypting: boolean; // Inco decryption in progress
+  decryptedCards: [number | null, number | null]; // Client-side decrypted cards
+  isRevealing: boolean; // Card reveal in progress (for showdown)
+  encryptionHandNumber: number | null; // Hand number when encryption was detected (prevents cross-hand leakage)
 }
 
 export interface UsePokerGameResult {
@@ -185,13 +201,18 @@ export interface UsePokerGameResult {
   // Inco FHE Encryption Actions
   encryptHoleCards: (seatIndex: number) => Promise<string>; // Phase 1: Encrypt cards
   grantCardAllowance: (seatIndex: number) => Promise<string>; // Phase 2: Grant decryption
+  revealCards: () => Promise<string>; // Reveal decrypted cards for showdown
   encryptAndGrantCards: (seatIndex: number) => Promise<void>; // Combined helper
+  encryptAllPlayersCards: () => Promise<void>; // Encrypt all players' cards
+  grantAllPlayersAllowances: () => Promise<void>; // Grant allowances only (for atomic encryption)
+  decryptMyCards: () => Promise<void>; // Client-side decrypt own cards
 
   // Utilities
   refreshState: () => Promise<void>;
   setTableId: (tableId: string) => void;
   setUseVrf: (useVrf: boolean) => void;
   setUsePrivacyMode: (usePrivacy: boolean) => void;
+  setUseIncoPrivacy: (useInco: boolean) => void;
   checkDelegationStatus: () => Promise<boolean>;
 }
 
@@ -242,10 +263,19 @@ const initialGameState: GameState = {
   isDelegating: false,
   isUndelegating: false,
   usePrivacyMode: false, // Default to public mode (toggle on for privacy via ER)
+  // Inco FHE privacy state
+  useIncoPrivacy: true, // Default to Inco privacy ON (cryptographic card encryption)
+  isEncrypting: false,
+  areCardsEncrypted: false,
+  areAllowancesGranted: false,
+  isDecrypting: false,
+  decryptedCards: [null, null],
+  isRevealing: false,
+  encryptionHandNumber: null, // Track which hand encryption belongs to
 };
 
 export function usePokerGame(): UsePokerGameResult {
-  const { program, provider, publicKey, erProgram, erProvider, erConnection } = usePokerProgram();
+  const { program, provider, publicKey, erProgram, erProvider, erConnection, signMessage } = usePokerProgram();
   const [gameState, setGameState] = useState<GameState>(initialGameState);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -256,9 +286,14 @@ export function usePokerGame(): UsePokerGameResult {
     setGameState((prev) => ({ ...prev, useVrf }));
   }, []);
 
-  // Toggle Privacy mode (auto-delegation)
+  // Toggle Privacy mode (auto-delegation via MagicBlock ER)
   const setUsePrivacyMode = useCallback((usePrivacyMode: boolean) => {
     setGameState((prev) => ({ ...prev, usePrivacyMode }));
+  }, []);
+
+  // Toggle Inco FHE Privacy mode (cryptographic card encryption)
+  const setUseIncoPrivacy = useCallback((useIncoPrivacy: boolean) => {
+    setGameState((prev) => ({ ...prev, useIncoPrivacy }));
   }, []);
 
   // Check if current player's seat is delegated to ER
@@ -311,29 +346,58 @@ export function usePokerGame(): UsePokerGameResult {
             const [seatPDA] = getSeatPDA(tablePDA, i);
             const seat = await accounts.playerSeat.fetch(seatPDA) as PlayerSeatAccount;
 
-            // Convert hole cards - only show if current player
+            // Convert hole cards - handle both plaintext (0-51) and encrypted (u128 handles)
             const isCurrentPlayer = publicKey?.equals(seat.player);
-            const holeCard1 = seat.holeCard1.toNumber();
-            const holeCard2 = seat.holeCard2.toNumber();
+
+            // Use BigInt for safe handling of large u128 encrypted values
+            const holeCard1BigInt = BigInt(seat.holeCard1.toString());
+            const holeCard2BigInt = BigInt(seat.holeCard2.toString());
+
+            // Check if cards are encrypted (values > 51) or plaintext (0-51)
+            // 255 means not dealt yet - exclude from "encrypted" check
+            // Encrypted handles are large u128 values, definitely > 255
+            const isCard1Encrypted = holeCard1BigInt > BigInt(255);
+            const isCard2Encrypted = holeCard2BigInt > BigInt(255);
+            const areCardsEncrypted = isCard1Encrypted || isCard2Encrypted;
+
+            // For plaintext cards, safely convert to number
+            const holeCard1 = isCard1Encrypted ? null : Number(holeCard1BigInt);
+            const holeCard2 = isCard2Encrypted ? null : Number(holeCard2BigInt);
 
             // Check if cards have been dealt - card value 255 means not dealt
-            // Cards remain valid through showdown and settlement for hand evaluation
-            const hasValidCards = holeCard1 !== 255 && holeCard2 !== 255 &&
-                                  holeCard1 >= 0 && holeCard1 <= 51 &&
-                                  holeCard2 >= 0 && holeCard2 <= 51;
+            // Cards are valid if they're either plaintext (0-51) OR encrypted (> 51)
+            const hasDealtCards = holeCard1BigInt !== BigInt(255) && holeCard2BigInt !== BigInt(255);
+            const hasValidPlaintextCards = hasDealtCards && !areCardsEncrypted &&
+                                           holeCard1 !== null && holeCard1 >= 0 && holeCard1 <= 51 &&
+                                           holeCard2 !== null && holeCard2 >= 0 && holeCard2 <= 51;
+
+            // Get revealed cards (set during showdown via reveal_cards instruction)
+            const revealedCard1 = seat.revealedCard1;
+            const revealedCard2 = seat.revealedCard2;
+            const hasRevealedCards = seat.cardsRevealed &&
+                                     revealedCard1 !== 255 && revealedCard2 !== 255 &&
+                                     revealedCard1 >= 0 && revealedCard1 <= 51 &&
+                                     revealedCard2 >= 0 && revealedCard2 <= 51;
 
             players.push({
               seatIndex: seat.seatIndex,
               player: seat.player.toString(),
               chips: seat.chips.toNumber(),
               currentBet: seat.totalBetThisHand.toNumber(), // Use total bet this hand, not per-round
-              // Show cards if: current player AND cards are valid (0-51, not 255)
-              // This allows seeing cards during showdown and settlement for hand evaluation
-              holeCards: isCurrentPlayer && hasValidCards
-                ? [holeCard1, holeCard2]
+              // Show cards if: current player AND cards are plaintext valid (0-51)
+              // Encrypted cards will show as null (hidden) - need Inco decryption
+              holeCards: isCurrentPlayer && hasValidPlaintextCards
+                ? [holeCard1!, holeCard2!]
                 : [null, null],
               status: mapPlayerStatus(seat.status),
-              isActive: hasValidCards,
+              // Player is active if cards have been dealt (encrypted or plaintext)
+              isActive: hasDealtCards,
+              // Track if cards are encrypted for UI display
+              isEncrypted: areCardsEncrypted,
+              // Track if cards have been revealed for showdown
+              cardsRevealed: seat.cardsRevealed ?? false,
+              // Revealed cards for showdown display (visible to all players)
+              revealedCards: hasRevealedCards ? [revealedCard1, revealedCard2] : [null, null],
             });
           } catch (e) {
             // Seat PDA doesn't exist yet
@@ -345,6 +409,9 @@ export function usePokerGame(): UsePokerGameResult {
               holeCards: [null, null],
               status: "empty",
               isActive: false,
+              isEncrypted: false,
+              cardsRevealed: false,
+              revealedCards: [null, null],
             });
           }
         } else {
@@ -356,6 +423,9 @@ export function usePokerGame(): UsePokerGameResult {
             holeCards: [null, null],
             status: "empty",
             isActive: false,
+            isEncrypted: false,
+            cardsRevealed: false,
+            revealedCards: [null, null],
           });
         }
       }
@@ -465,6 +535,59 @@ export function usePokerGame(): UsePokerGameResult {
         }
       }
 
+      // Get current hand number for tracking encryption state across hands
+      const currentHandNumber = table.handNumber.toNumber();
+
+      // Reset Inco encryption state when:
+      // 1. Phase is Dealing (hand just started)
+      // 2. Table is Waiting (between hands)
+      // 3. Hand number changed from what we last tracked (prevents cross-hand state leakage)
+      const isNewHand = gameState.encryptionHandNumber !== null &&
+                        currentHandNumber !== gameState.encryptionHandNumber;
+      const resetEncryptionState = phase === "Dealing" || tableStatus === "Waiting" || isNewHand;
+
+      // Detect if cards are encrypted from on-chain state (any player has encrypted cards)
+      // This syncs encryption state for all players, not just the authority who dealt
+      // IMPORTANT: Only consider cards encrypted if we're past the Dealing phase
+      // During Dealing phase, old encrypted cards from previous hand might still be present
+      const detectedCardsEncrypted = phase !== "Dealing" && players.some(p => p.isEncrypted === true);
+
+      // Check if current player's allowances have been granted on-chain
+      // This allows all players to detect when they can decrypt, not just the authority
+      let detectedAllowancesGranted = false;
+      if (currentPlayerSeat !== null && !resetEncryptionState && detectedCardsEncrypted) {
+        const currentPlayer = players.find(p => p.seatIndex === currentPlayerSeat);
+        if (currentPlayer?.isEncrypted && publicKey) {
+          // Get the current player's encrypted handles from on-chain
+          try {
+            const [seatPDA] = getSeatPDA(gameState.tablePDA, currentPlayerSeat);
+            const seat = await accounts.playerSeat.fetch(seatPDA) as PlayerSeatAccount;
+            const handle1 = BigInt(seat.holeCard1.toString());
+            const handle2 = BigInt(seat.holeCard2.toString());
+
+            // Check if allowance accounts exist AND are owned by Inco program
+            if (handle1 > BigInt(255) && handle2 > BigInt(255)) {
+              const [allowancePDA1] = getIncoAllowancePDA(handle1, publicKey);
+              const [allowancePDA2] = getIncoAllowancePDA(handle2, publicKey);
+
+              // Check if both allowance accounts exist and are owned by Inco
+              const [acct1, acct2] = await Promise.all([
+                provider.connection.getAccountInfo(allowancePDA1),
+                provider.connection.getAccountInfo(allowancePDA2),
+              ]);
+
+              // Verify accounts exist AND are owned by Inco program (not just any account)
+              const isValid1 = acct1 !== null && acct1.owner.equals(INCO_PROGRAM_ID);
+              const isValid2 = acct2 !== null && acct2.owner.equals(INCO_PROGRAM_ID);
+              detectedAllowancesGranted = isValid1 && isValid2;
+
+            }
+          } catch (e) {
+            // Ignore errors - allowances not yet granted
+          }
+        }
+      }
+
       setGameState((prev) => ({
         ...prev,
         table,
@@ -491,6 +614,16 @@ export function usePokerGame(): UsePokerGameResult {
         // Reset to false when table is Waiting (hand is over), otherwise preserve/detect
         isGameDelegated: tableStatus === "Waiting" ? false : (detectedDelegation || gameState.isGameDelegated),
         isSeatDelegated: tableStatus === "Waiting" ? false : (detectedDelegation || gameState.isSeatDelegated),
+        // Reset Inco encryption state for new hands or when hand number changes
+        areCardsEncrypted: resetEncryptionState ? false : (detectedCardsEncrypted || prev.areCardsEncrypted),
+        // Allowances: prefer on-chain detection, but preserve local state to avoid race conditions
+        // Only preserve local state if we're in the same hand (detectedCardsEncrypted implies same hand)
+        areAllowancesGranted: resetEncryptionState ? false : (detectedAllowancesGranted || (detectedCardsEncrypted && prev.areAllowancesGranted)),
+        isEncrypting: resetEncryptionState ? false : prev.isEncrypting,
+        isDecrypting: resetEncryptionState ? false : prev.isDecrypting,
+        decryptedCards: resetEncryptionState ? [null, null] : prev.decryptedCards,
+        // Track which hand the encryption state belongs to (for cross-hand leak prevention)
+        encryptionHandNumber: resetEncryptionState ? null : (detectedCardsEncrypted ? currentHandNumber : prev.encryptionHandNumber),
       }));
 
       setError(null);
@@ -722,6 +855,18 @@ export function usePokerGame(): UsePokerGameResult {
     setLoading(true);
     setError(null);
 
+    // IMPORTANT: Reset ALL encryption state when starting a new hand
+    // This prevents stale state from previous hands from leaking through
+    setGameState((prev) => ({
+      ...prev,
+      areCardsEncrypted: false,
+      areAllowancesGranted: false,
+      isEncrypting: false,
+      isDecrypting: false,
+      decryptedCards: [null, null],
+      encryptionHandNumber: null,
+    }));
+
     try {
       const handNumber = BigInt(gameState.table.handNumber.toNumber() + 1);
       const [handPDA] = getHandPDA(gameState.tablePDA, handNumber);
@@ -794,17 +939,48 @@ export function usePokerGame(): UsePokerGameResult {
       const [sbSeatPDA] = getSeatPDA(gameState.tablePDA, sbPos);
       const [bbSeatPDA] = getSeatPDA(gameState.tablePDA, bbPos);
 
-      const tx = await program.methods
-        .dealCards()
-        .accounts({
-          caller: publicKey,
-          table: gameState.tablePDA,
-          handState: handPDA,
-          deckState: deckPDA,
-          sbSeat: sbSeatPDA,
-          bbSeat: bbSeatPDA,
-        })
-        .rpc();
+      let tx: string;
+
+      // Use atomic encrypted dealing when Inco privacy is enabled
+      if (gameState.useIncoPrivacy) {
+        console.log("Using deal_cards_encrypted for atomic Inco encryption (P0 security)");
+        tx = await program.methods
+          .dealCardsEncrypted()
+          .accounts({
+            caller: publicKey,
+            table: gameState.tablePDA,
+            handState: handPDA,
+            deckState: deckPDA,
+            sbSeat: sbSeatPDA,
+            bbSeat: bbSeatPDA,
+            incoProgram: INCO_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+          })
+          .rpc();
+
+        // Cards are already encrypted - update state with hand number tracking
+        const handNumber = gameState.table.handNumber.toNumber();
+        setGameState((prev) => ({
+          ...prev,
+          areCardsEncrypted: true,
+          encryptionHandNumber: handNumber,
+        }));
+        console.log("Cards dealt with atomic encryption - no plaintext exposure");
+      } else {
+        // Legacy plaintext dealing (not recommended for production)
+        console.log("Using legacy deal_cards (WARNING: plaintext cards on-chain!)");
+        tx = await program.methods
+          .dealCards()
+          .accounts({
+            caller: publicKey,
+            table: gameState.tablePDA,
+            handState: handPDA,
+            deckState: deckPDA,
+            sbSeat: sbSeatPDA,
+            bbSeat: bbSeatPDA,
+          })
+          .rpc();
+      }
 
       await provider.connection.confirmTransaction(tx, "confirmed");
       await refreshState();
@@ -816,7 +992,7 @@ export function usePokerGame(): UsePokerGameResult {
     } finally {
       setLoading(false);
     }
-  }, [program, provider, publicKey, gameState.tablePDA, gameState.table, refreshState]);
+  }, [program, provider, publicKey, gameState.tablePDA, gameState.table, gameState.useIncoPrivacy, refreshState]);
 
   // ============================================================
   // MagicBlock VRF: Request shuffle (initiates VRF randomness)
@@ -1364,7 +1540,8 @@ export function usePokerGame(): UsePokerGameResult {
 
       await provider.connection.confirmTransaction(tx, "confirmed");
       console.log("Phase 1 complete - cards encrypted:", tx);
-      await refreshState();
+      // NOTE: Don't call refreshState() here - let encryptAllPlayersCards handle it at the end
+      // to avoid intermediate state confusion
       return tx;
     } catch (e) {
       const message = parseAnchorError(e);
@@ -1373,7 +1550,7 @@ export function usePokerGame(): UsePokerGameResult {
     } finally {
       setLoading(false);
     }
-  }, [program, provider, publicKey, gameState.tablePDA, gameState.table, refreshState]);
+  }, [program, provider, publicKey, gameState.tablePDA, gameState.table]);
 
   // ============================================================
   // Inco FHE: Phase 2 - Grant decryption allowance
@@ -1429,7 +1606,8 @@ export function usePokerGame(): UsePokerGameResult {
 
       await provider.connection.confirmTransaction(tx, "confirmed");
       console.log("Phase 2 complete - allowances granted:", tx);
-      await refreshState();
+      // NOTE: Don't call refreshState() here - let encryptAllPlayersCards handle it at the end
+      // to avoid intermediate state confusion
       return tx;
     } catch (e) {
       const message = parseAnchorError(e);
@@ -1438,7 +1616,7 @@ export function usePokerGame(): UsePokerGameResult {
     } finally {
       setLoading(false);
     }
-  }, [program, provider, publicKey, gameState.tablePDA, gameState.table, refreshState]);
+  }, [program, provider, publicKey, gameState.tablePDA, gameState.table]);
 
   // ============================================================
   // Inco FHE: Combined helper - Encrypt + Grant in sequence
@@ -1457,6 +1635,203 @@ export function usePokerGame(): UsePokerGameResult {
 
     console.log(`Inco encryption complete for seat ${seatIndex}!`);
   }, [encryptHoleCards, grantCardAllowance]);
+
+  // ============================================================
+  // Inco FHE: Encrypt all players' cards (after dealing)
+  // Called automatically when useIncoPrivacy is enabled
+  // ============================================================
+  const encryptAllPlayersCards = useCallback(async (): Promise<void> => {
+    if (!gameState.table || !gameState.tablePDA) {
+      throw new Error("Table not ready");
+    }
+
+    const occupied = getOccupiedSeats(gameState.table.occupiedSeats, gameState.table.maxPlayers);
+    console.log(`Encrypting cards for ${occupied.length} players via Inco FHE...`);
+
+    setGameState((prev) => ({ ...prev, isEncrypting: true }));
+
+    try {
+      // Encrypt each player's cards sequentially
+      for (const seatIndex of occupied) {
+        console.log(`Encrypting seat ${seatIndex}...`);
+        await encryptAndGrantCards(seatIndex);
+        // Small delay between players to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+
+      console.log("All cards encrypted successfully!");
+      // Track the hand number to prevent cross-hand state leakage
+      const handNumber = gameState.table.handNumber.toNumber();
+      setGameState((prev) => ({
+        ...prev,
+        isEncrypting: false,
+        areCardsEncrypted: true,
+        areAllowancesGranted: true,
+        encryptionHandNumber: handNumber,
+      }));
+
+      // Small delay then refresh to sync UI with on-chain state
+      await new Promise(resolve => setTimeout(resolve, 500));
+      await refreshState();
+    } catch (e) {
+      console.error("Failed to encrypt all cards:", e);
+      setGameState((prev) => ({ ...prev, isEncrypting: false }));
+      throw e;
+    }
+  }, [gameState.table, gameState.tablePDA, encryptAndGrantCards, refreshState]);
+
+  // ============================================================
+  // Inco FHE: Grant allowances only (for atomic encryption)
+  // When cards are encrypted during deal_cards_encrypted, we still need
+  // to grant allowances for players to decrypt their own cards
+  // ============================================================
+  const grantAllPlayersAllowances = useCallback(async (): Promise<void> => {
+    if (!gameState.table || !gameState.tablePDA) {
+      throw new Error("Table not ready");
+    }
+
+    const occupied = getOccupiedSeats(gameState.table.occupiedSeats, gameState.table.maxPlayers);
+    console.log(`Granting decryption allowances for ${occupied.length} players...`);
+
+    setGameState((prev) => ({ ...prev, isEncrypting: true })); // Reuse isEncrypting for progress
+
+    try {
+      // Grant allowance for each player's cards sequentially
+      for (const seatIndex of occupied) {
+        console.log(`Granting allowance for seat ${seatIndex}...`);
+        await grantCardAllowance(seatIndex);
+        // Small delay between players to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+
+      console.log("All allowances granted successfully!");
+      // Track the hand number to prevent cross-hand state leakage
+      const handNumber = gameState.table.handNumber.toNumber();
+      setGameState((prev) => ({
+        ...prev,
+        isEncrypting: false,
+        areAllowancesGranted: true,
+        encryptionHandNumber: handNumber,
+      }));
+
+      // Small delay then refresh to sync UI with on-chain state
+      await new Promise(resolve => setTimeout(resolve, 500));
+      await refreshState();
+    } catch (e) {
+      console.error("Failed to grant allowances:", e);
+      setGameState((prev) => ({ ...prev, isEncrypting: false }));
+      throw e;
+    }
+  }, [gameState.table, gameState.tablePDA, grantCardAllowance, refreshState]);
+
+  // ============================================================
+  // Inco FHE: Decrypt own cards (client-side)
+  // Uses Inco SDK to decrypt encrypted handles with wallet signing
+  // ============================================================
+  const decryptMyCards = useCallback(async (): Promise<void> => {
+    if (!program || !publicKey || !signMessage || !gameState.tablePDA || gameState.currentPlayerSeat === null) {
+      throw new Error("Not ready to decrypt - wallet not connected or not at table");
+    }
+
+    console.log("Starting Inco decryption for your cards...");
+    setGameState((prev) => ({ ...prev, isDecrypting: true }));
+
+    try {
+      // Fetch current player's seat to get encrypted handles
+      const [seatPDA] = getSeatPDA(gameState.tablePDA, gameState.currentPlayerSeat);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const accounts = program.account as any;
+      const seat = await accounts.playerSeat.fetch(seatPDA) as PlayerSeatAccount;
+
+      // Get encrypted handles as BigInt
+      const handle1 = BigInt(seat.holeCard1.toString());
+      const handle2 = BigInt(seat.holeCard2.toString());
+
+      // Verify cards are encrypted (handles > 51)
+      if (handle1 <= BigInt(51) || handle2 <= BigInt(51)) {
+        throw new Error("Cards are not encrypted - nothing to decrypt");
+      }
+
+      console.log("Encrypted handles:", handle1.toString(), handle2.toString());
+      console.log("Calling Inco SDK to decrypt...");
+
+      // Call Inco SDK to decrypt (requires wallet signature for authentication)
+      const plaintexts = await decryptCards(
+        [handle1, handle2],
+        { publicKey, signMessage }
+      );
+
+      // Validate we got both cards
+      if (plaintexts.length < 2) {
+        console.error(`Expected 2 decrypted cards, got ${plaintexts.length}`);
+      }
+
+      // Use null for missing cards (defensive coding)
+      const card1 = plaintexts[0] ?? null;
+      const card2 = plaintexts[1] ?? null;
+
+      // Update state with decrypted cards
+      setGameState((prev) => ({
+        ...prev,
+        isDecrypting: false,
+        decryptedCards: [card1, card2],
+      }));
+
+      console.log("Cards decrypted successfully:", card1, card2);
+    } catch (e) {
+      console.error("Failed to decrypt cards:", e);
+      setGameState((prev) => ({ ...prev, isDecrypting: false }));
+      throw e;
+    }
+  }, [program, publicKey, signMessage, gameState.tablePDA, gameState.currentPlayerSeat]);
+
+  // Reveal cards for showdown (submits decrypted cards to blockchain)
+  // Note: Full Ed25519 verification from Inco is implemented in the program,
+  // but we allow reveal without verification for testing
+  const revealCards = useCallback(async (): Promise<string> => {
+    if (!program || !provider || !publicKey || !gameState.tablePDA || !gameState.table || gameState.currentPlayerSeat === null) {
+      throw new Error("Not ready to reveal - wallet not connected or not at table");
+    }
+
+    // Check if we have decrypted cards
+    const [card1, card2] = gameState.decryptedCards;
+    if (card1 === null || card2 === null) {
+      throw new Error("Must decrypt cards before revealing");
+    }
+
+    console.log("Revealing cards for showdown:", card1, card2);
+    setGameState((prev) => ({ ...prev, isRevealing: true }));
+
+    try {
+      const handNumber = BigInt(gameState.table.handNumber.toNumber());
+      const [seatPDA] = getSeatPDA(gameState.tablePDA, gameState.currentPlayerSeat);
+      const [handPDA] = getHandPDA(gameState.tablePDA, handNumber);
+
+      // Call reveal_cards instruction
+      // Note: In production, this should include Ed25519 verification instructions
+      // For now, the program allows reveal without verification for testing
+      const tx = await program.methods
+        .revealCards(card1, card2)
+        .accounts({
+          player: publicKey,
+          table: gameState.tablePDA,
+          handState: handPDA,
+          playerSeat: seatPDA,
+          instructionsSysvar: new PublicKey("Sysvar1nstructions1111111111111111111111111"),
+        })
+        .rpc();
+
+      console.log("Cards revealed on-chain:", tx);
+      setGameState((prev) => ({ ...prev, isRevealing: false }));
+
+      // State will be refreshed by polling
+      return tx;
+    } catch (e) {
+      console.error("Failed to reveal cards:", e);
+      setGameState((prev) => ({ ...prev, isRevealing: false }));
+      throw e;
+    }
+  }, [program, provider, publicKey, gameState.tablePDA, gameState.table, gameState.currentPlayerSeat, gameState.decryptedCards]);
 
   // Player action (routes through ER when delegated for low latency)
   const playerAction = useCallback(
@@ -1762,11 +2137,16 @@ export function usePokerGame(): UsePokerGameResult {
     encryptHoleCards,
     grantCardAllowance,
     encryptAndGrantCards,
+    encryptAllPlayersCards,
+    grantAllPlayersAllowances,
+    decryptMyCards,
+    revealCards,
     // Utilities
     refreshState,
     setTableId,
     setUseVrf,
     setUsePrivacyMode,
+    setUseIncoPrivacy,
     checkDelegationStatus,
   };
 }

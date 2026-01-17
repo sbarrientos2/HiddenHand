@@ -5,7 +5,7 @@ import { decodeCard } from "@/lib/utils";
 
 export interface GameEvent {
   id: string;
-  type: "action" | "phase" | "cards" | "winner" | "system";
+  type: "action" | "phase" | "cards" | "winner" | "system" | "privacy";
   timestamp: number;
   message: string;
   seatIndex?: number;
@@ -53,6 +53,10 @@ export const GameHistory: FC<GameHistoryProps> = ({
       case "system":
         return (
           <div className="w-2 h-2 rounded-full bg-[var(--text-muted)]" />
+        );
+      case "privacy":
+        return (
+          <div className="w-4 h-4 flex items-center justify-center text-sm">🔐</div>
         );
     }
   };
@@ -142,6 +146,8 @@ export const GameHistory: FC<GameHistoryProps> = ({
                     ? "text-green-400 font-semibold"
                     : event.type === "action"
                     ? getActionColor(event.message)
+                    : event.type === "privacy"
+                    ? "text-cyan-400"
                     : "text-[var(--text-secondary)]"
                 }>
                   {event.message}

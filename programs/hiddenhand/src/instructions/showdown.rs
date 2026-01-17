@@ -138,6 +138,23 @@ pub fn handler(ctx: Context<Showdown>) -> Result<()> {
         }
     }
 
+    // Check that all active players have revealed their cards (required for secure showdown)
+    // Skip this check if only one player remains (they win by default)
+    if hand_state.active_count > 1 {
+        for (seat_idx, acc_idx) in active_seats.iter() {
+            if hand_state.is_player_active(*seat_idx) {
+                let account_info = &ctx.remaining_accounts[*acc_idx];
+                let data = account_info.try_borrow_data()?;
+                if let Ok(seat) = PlayerSeat::try_deserialize(&mut &data[..]) {
+                    if !seat.cards_revealed {
+                        msg!("Seat {} has not revealed cards yet", seat_idx);
+                        return Err(HiddenHandError::PlayersNotRevealed.into());
+                    }
+                }
+            }
+        }
+    }
+
     // Handle single winner (everyone else folded)
     if hand_state.active_count == 1 {
         // Find the single remaining player
@@ -164,9 +181,18 @@ pub fn handler(ctx: Context<Showdown>) -> Result<()> {
                 let data = account_info.try_borrow_data()?;
                 if let Ok(seat) = PlayerSeat::try_deserialize(&mut &data[..]) {
                     // Build 7-card hand (2 hole cards + 5 community)
-                    // For mock: hole cards stored as u128, use lower 8 bits as card value
-                    let hole_card_1 = (seat.hole_card_1 & 0xFF) as u8;
-                    let hole_card_2 = (seat.hole_card_2 & 0xFF) as u8;
+                    // Use revealed_card_1/2 from secure Ed25519-verified reveal
+                    // Falls back to hole_card lower bits for non-encrypted games
+                    let hole_card_1 = if seat.cards_revealed {
+                        seat.revealed_card_1
+                    } else {
+                        (seat.hole_card_1 & 0xFF) as u8
+                    };
+                    let hole_card_2 = if seat.cards_revealed {
+                        seat.revealed_card_2
+                    } else {
+                        (seat.hole_card_2 & 0xFF) as u8
+                    };
 
                     let seven_cards: [u8; 7] = [
                         hole_card_1,
@@ -209,8 +235,16 @@ pub fn handler(ctx: Context<Showdown>) -> Result<()> {
                         seat.try_serialize(&mut *data)?;
 
                         // Log the hand
-                        let hole_1 = (seat.hole_card_1 & 0xFF) as u8;
-                        let hole_2 = (seat.hole_card_2 & 0xFF) as u8;
+                        let hole_1 = if seat.cards_revealed {
+                            seat.revealed_card_1
+                        } else {
+                            (seat.hole_card_1 & 0xFF) as u8
+                        };
+                        let hole_2 = if seat.cards_revealed {
+                            seat.revealed_card_2
+                        } else {
+                            (seat.hole_card_2 & 0xFF) as u8
+                        };
                         let hand_eval = evaluate_hand(&[
                             hole_1, hole_2,
                             community_cards[0], community_cards[1], community_cards[2],
@@ -245,6 +279,9 @@ pub fn handler(ctx: Context<Showdown>) -> Result<()> {
                         seat.total_bet_this_hand = 0;
                         seat.hole_card_1 = 255; // Sentinel: not dealt
                         seat.hole_card_2 = 255; // Sentinel: not dealt
+                        seat.revealed_card_1 = 255; // Not revealed
+                        seat.revealed_card_2 = 255; // Not revealed
+                        seat.cards_revealed = false;
                         seat.has_acted = false;
                         seat.try_serialize(&mut *data)?;
                     }

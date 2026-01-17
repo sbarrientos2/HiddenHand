@@ -10,6 +10,8 @@ interface Player {
   chips: number;
   currentBet: number;
   holeCards: [number | null, number | null];
+  revealedCards?: [number | null, number | null];
+  cardsRevealed?: boolean;
   status: "empty" | "sitting" | "playing" | "folded" | "allin";
 }
 
@@ -25,6 +27,7 @@ interface PokerTableProps {
   currentPlayerAddress?: string;
   smallBlind: number;
   bigBlind: number;
+  isShowdownPhase?: boolean;
 }
 
 // Seat positions around the table (for 6-max)
@@ -50,6 +53,7 @@ export const PokerTable: FC<PokerTableProps> = ({
   currentPlayerAddress,
   smallBlind,
   bigBlind,
+  isShowdownPhase = false,
 }) => {
   // Calculate SB and BB positions
   const occupiedSeats = players
@@ -254,6 +258,8 @@ export const PokerTable: FC<PokerTableProps> = ({
               chips={player?.chips ?? 0}
               currentBet={player?.currentBet ?? 0}
               holeCards={player?.holeCards ?? [null, null]}
+              revealedCards={player?.revealedCards}
+              cardsRevealed={player?.cardsRevealed}
               isActive={player?.status === "playing" || player?.status === "allin"}
               isDealer={idx === dealerPosition}
               isSmallBlind={idx === sbPosition}
@@ -261,6 +267,7 @@ export const PokerTable: FC<PokerTableProps> = ({
               isTurn={idx === actionOn && phase !== "Showdown" && phase !== "Settled"}
               status={player?.status ?? "empty"}
               isCurrentPlayer={isCurrentPlayer}
+              isShowdownPhase={isShowdownPhase}
             />
           </div>
         );

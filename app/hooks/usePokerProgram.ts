@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { useConnection, useAnchorWallet } from "@solana/wallet-adapter-react";
+import { useConnection, useAnchorWallet, useWallet } from "@solana/wallet-adapter-react";
 import { Program, AnchorProvider, Idl } from "@coral-xyz/anchor";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { PROGRAM_ID } from "@/lib/program";
@@ -24,6 +24,7 @@ export interface UsePokerProgramResult {
   // Common
   connected: boolean;
   publicKey: PublicKey | null;
+  signMessage: ((message: Uint8Array) => Promise<Uint8Array>) | undefined;
 }
 
 /**
@@ -43,6 +44,7 @@ export interface UsePokerProgramResult {
 export function usePokerProgram(): UsePokerProgramResult {
   const { connection } = useConnection();
   const wallet = useAnchorWallet();
+  const { signMessage } = useWallet();
   const endpoints = getEndpoints();
 
   // Base layer provider (Solana devnet/localnet)
@@ -96,5 +98,6 @@ export function usePokerProgram(): UsePokerProgramResult {
     // Common
     connected: !!wallet,
     publicKey: wallet?.publicKey ?? null,
+    signMessage,
   };
 }

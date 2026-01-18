@@ -109,11 +109,12 @@ export function isMagicBlockSupported(): boolean {
 }
 
 /**
- * Poll for VRF seed received (VRF callback completion)
- * Returns true when VRF seed is received, false on timeout
+ * Poll for VRF shuffle completion (atomic shuffle + encrypt)
+ * Returns true when is_shuffled is set, false on timeout
  *
- * Note: The VRF callback sets seed_received=true, NOT is_shuffled.
- * The actual shuffle happens later in deal_cards_vrf on the ER.
+ * Note: With Modified Option B, the VRF callback atomically shuffles
+ * the deck AND encrypts cards in a single transaction. is_shuffled=true
+ * means everything is done.
  */
 export async function waitForShuffle(
   connection: Connection,
@@ -127,20 +128,19 @@ export async function waitForShuffle(
     try {
       const accountInfo = await connection.getAccountInfo(deckPDA);
       if (accountInfo && accountInfo.data.length > 0) {
-        // DeckState layout:
+        // DeckState layout (Modified Option B - no vrf_seed stored):
         // 8 bytes discriminator
         // 32 bytes hand pubkey
         // 52 * 16 = 832 bytes cards array
         // 1 byte deal_index
-        // 1 byte is_shuffled
-        // 32 bytes vrf_seed
-        // 1 byte seed_received <-- VRF callback sets THIS
+        // 1 byte is_shuffled <-- VRF callback sets THIS when complete
         // 1 byte bump
-        // seed_received is at offset 8 + 32 + 832 + 1 + 1 + 32 = 906
-        const SEED_RECEIVED_OFFSET = 8 + 32 + (52 * 16) + 1 + 1 + 32;
-        const seedReceived = accountInfo.data[SEED_RECEIVED_OFFSET] === 1;
+        // 33 bytes _reserved
+        // is_shuffled is at offset 8 + 32 + 832 + 1 = 873
+        const IS_SHUFFLED_OFFSET = 8 + 32 + (52 * 16) + 1;
+        const isShuffled = accountInfo.data[IS_SHUFFLED_OFFSET] === 1;
 
-        if (seedReceived) {
+        if (isShuffled) {
           return true;
         }
       }
@@ -155,19 +155,20 @@ export async function waitForShuffle(
 }
 
 /**
- * Subscribe to deck state changes for real-time VRF seed detection
+ * Subscribe to deck state changes for real-time shuffle completion detection
  */
 export function subscribeToShuffleCompletion(
   connection: Connection,
   deckPDA: PublicKey,
   onShuffled: () => void
 ): number {
-  const SEED_RECEIVED_OFFSET = 8 + 32 + (52 * 16) + 1 + 1 + 32;
+  // is_shuffled is at offset 8 + 32 + 832 + 1 = 873
+  const IS_SHUFFLED_OFFSET = 8 + 32 + (52 * 16) + 1;
 
   return connection.onAccountChange(deckPDA, (accountInfo) => {
-    if (accountInfo.data.length > SEED_RECEIVED_OFFSET) {
-      const seedReceived = accountInfo.data[SEED_RECEIVED_OFFSET] === 1;
-      if (seedReceived) {
+    if (accountInfo.data.length > IS_SHUFFLED_OFFSET) {
+      const isShuffled = accountInfo.data[IS_SHUFFLED_OFFSET] === 1;
+      if (isShuffled) {
         onShuffled();
       }
     }

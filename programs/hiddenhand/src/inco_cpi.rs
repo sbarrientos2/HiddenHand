@@ -10,7 +10,7 @@
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::{
     instruction::{AccountMeta, Instruction},
-    program::invoke,
+    program::{invoke, invoke_signed},
 };
 
 /// Inco Lightning Program ID
@@ -227,6 +227,52 @@ pub fn encrypt_cards<'info>(
     }
 
     Ok(handles)
+}
+
+/// Encrypt a card value using a PDA as the signer (for VRF callback)
+///
+/// This is used when we need to encrypt cards in a callback where
+/// the original authority isn't available as a signer.
+///
+/// # Arguments
+/// * `pda_account` - The PDA account that will sign via invoke_signed
+/// * `pda_seeds` - The seeds used to derive the PDA (including bump)
+/// * `card_value` - The plaintext card value (0-51)
+///
+/// # Returns
+/// * `EncryptedCard` - The encrypted handle
+pub fn encrypt_card_with_pda<'info>(
+    pda_account: &AccountInfo<'info>,
+    pda_seeds: &[&[u8]],
+    card_value: u8,
+) -> Result<EncryptedCard> {
+    // Build instruction data: discriminator + value as u128
+    let mut data = Vec::with_capacity(8 + 16);
+    data.extend_from_slice(&discriminators::AS_EUINT128);
+    data.extend_from_slice(&(card_value as u128).to_le_bytes());
+
+    let ix = Instruction {
+        program_id: INCO_PROGRAM_ID,
+        accounts: vec![AccountMeta::new(pda_account.key(), true)],
+        data,
+    };
+
+    // Invoke with PDA signer
+    invoke_signed(&ix, &[pda_account.clone()], &[pda_seeds])?;
+
+    // Get the return data (encrypted handle)
+    let (_program_id, return_data) = anchor_lang::solana_program::program::get_return_data()
+        .ok_or(ProgramError::InvalidAccountData)?;
+
+    // Parse as u128 (Euint128 is just a wrapper around u128)
+    let handle = u128::from_le_bytes(
+        return_data
+            .try_into()
+            .map_err(|_| ProgramError::InvalidAccountData)?,
+    );
+
+    msg!("Card encrypted (PDA): {} -> handle {}", card_value, handle);
+    Ok(EncryptedCard(handle))
 }
 
 #[cfg(test)]

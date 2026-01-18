@@ -132,14 +132,15 @@ pub fn handler(ctx: Context<StartHand>) -> Result<()> {
     hand_state.bump = ctx.bumps.hand_state;
 
     // Initialize deck state
+    // NOTE: With Modified Option B, VRF seed is NEVER stored!
+    // Shuffle + encrypt happens atomically in callback_shuffle
     let deck_state = &mut ctx.accounts.deck_state;
     deck_state.hand = hand_state.key();
-    deck_state.cards = [0u128; DECK_SIZE]; // Will be shuffled on ER, not here
+    deck_state.cards = [0u128; DECK_SIZE]; // Will be shuffled in callback
     deck_state.deal_index = 0;
     deck_state.is_shuffled = false;
-    deck_state.vrf_seed = [0u8; 32]; // Will be set by VRF callback
-    deck_state.seed_received = false;
     deck_state.bump = ctx.bumps.deck_state;
+    deck_state._reserved = [0u8; 33]; // Reserved for future use
 
     msg!(
         "Hand #{} started. Dealer: seat {}, SB: seat {}, BB: seat {}, Action: seat {}",

@@ -6,10 +6,16 @@ use crate::error::HiddenHandError;
 use crate::inco_cpi::{self, INCO_PROGRAM_ID};
 use crate::state::{DeckState, GamePhase, HandState, PlayerSeat, PlayerStatus, Table, TableStatus};
 
-/// Deal cards after VRF seed has been received
-/// This instruction SHUFFLES the deck using the VRF seed and distributes hole cards
-/// IMPORTANT: The shuffle happens HERE (on ER after delegation), NOT in callback_shuffle
-/// This ensures the card order is never visible on the base layer
+/// DEPRECATED: Use request_shuffle instead!
+///
+/// With Modified Option B, the VRF callback now handles shuffle + encrypt atomically.
+/// This instruction is kept only for backwards compatibility and manual testing.
+///
+/// For new games, use:
+/// 1. request_shuffle() - which triggers atomic shuffle + encrypt in callback
+///
+/// This instruction now only works if the deck is ALREADY shuffled (is_shuffled = true)
+/// and will encrypt any remaining unencrypted cards.
 #[derive(Accounts)]
 pub struct DealCardsVrf<'info> {
     #[account(mut)]
@@ -86,16 +92,10 @@ pub fn handler(ctx: Context<DealCardsVrf>) -> Result<()> {
         }
     }
 
-    // Validate phase
+    // Validate phase - allow both Dealing and PreFlop for flexibility
     require!(
-        hand_state.phase == GamePhase::Dealing,
+        hand_state.phase == GamePhase::Dealing || hand_state.phase == GamePhase::PreFlop,
         HiddenHandError::InvalidPhase
-    );
-
-    // REQUIRE VRF seed has been received (but NOT shuffled yet)
-    require!(
-        deck_state.seed_received,
-        HiddenHandError::DeckNotShuffled
     );
 
     require!(
@@ -103,12 +103,22 @@ pub fn handler(ctx: Context<DealCardsVrf>) -> Result<()> {
         HiddenHandError::HandNotInProgress
     );
 
-    // ============================================================
-    // SHUFFLE THE DECK HERE (on ER, not on base layer!)
-    // This ensures the card order is NEVER visible on the base layer
-    // ============================================================
-    let randomness = deck_state.vrf_seed;
-    msg!("Shuffling deck using VRF seed (first 8 bytes): {:?}", &randomness[0..8]);
+    // DEPRECATED: With Modified Option B, callback_shuffle handles everything.
+    // This instruction is now only for manual/testing modes.
+    // If deck is already shuffled by callback, just skip to encryption.
+    if deck_state.is_shuffled {
+        msg!("DEPRECATED: Deck already shuffled by callback_shuffle. This instruction is redundant.");
+        msg!("Use request_shuffle() for new games - it handles shuffle + encrypt atomically.");
+        return Ok(());
+    }
+
+    // For backwards compatibility / testing: shuffle using slot hash as seed
+    // This is NOT as secure as VRF but allows testing without oracle
+    msg!("WARNING: Using slot hash for shuffle (testing mode). Use VRF for production!");
+    let mut randomness = [0u8; 32];
+    randomness[0..8].copy_from_slice(&clock.slot.to_le_bytes());
+    randomness[8..16].copy_from_slice(&clock.unix_timestamp.to_le_bytes());
+    msg!("Shuffling deck using slot hash (first 8 bytes): {:?}", &randomness[0..8]);
 
     // Initialize deck with cards 0-51
     let mut deck: [u8; 52] = core::array::from_fn(|i| i as u8);

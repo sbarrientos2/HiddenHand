@@ -106,9 +106,9 @@ export interface DeckStateAccount {
   cards: BN[];
   dealIndex: number;
   isShuffled: boolean;
-  vrfSeed: number[]; // 32 bytes
-  seedReceived: boolean; // VRF seed received, ready for shuffle on ER
   bump: number;
+  // Note: vrfSeed and seedReceived removed in Modified Option B
+  // VRF seed is never stored - only used in memory during callback
 }
 
 // UI-friendly types
@@ -285,6 +285,13 @@ export function usePokerGame(): UsePokerGameResult {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  // Ref to track encryptionHandNumber for stale closure prevention in refreshState
+  const encryptionHandNumberRef = useRef<number | null>(null);
+
+  // Keep the ref in sync with gameState.encryptionHandNumber
+  useEffect(() => {
+    encryptionHandNumberRef.current = gameState.encryptionHandNumber;
+  }, [gameState.encryptionHandNumber]);
 
   // Toggle VRF mode
   const setUseVrf = useCallback((useVrf: boolean) => {
@@ -547,8 +554,9 @@ export function usePokerGame(): UsePokerGameResult {
       // 1. Phase is Dealing (hand just started)
       // 2. Table is Waiting (between hands)
       // 3. Hand number changed from what we last tracked (prevents cross-hand state leakage)
-      const isNewHand = gameState.encryptionHandNumber !== null &&
-                        currentHandNumber !== gameState.encryptionHandNumber;
+      // NOTE: Uses ref to avoid stale closure - refreshState dependencies don't include encryptionHandNumber
+      const isNewHand = encryptionHandNumberRef.current !== null &&
+                        currentHandNumber !== encryptionHandNumberRef.current;
       const resetEncryptionState = phase === "Dealing" || tableStatus === "Waiting" || isNewHand;
 
       // Detect if cards are encrypted from on-chain state (any player has encrypted cards)
@@ -613,8 +621,8 @@ export function usePokerGame(): UsePokerGameResult {
         currentPlayerSeat,
         lastActionTime: handState?.lastActionTime?.toNumber() ?? null,
         lastReadyTime: table.lastReadyTime?.toNumber() ?? null,
-        // seedReceived means VRF callback completed and deck is ready for dealing on ER
-        isDeckShuffled: deckState?.seedReceived ?? false,
+        // isShuffled means VRF callback completed atomic shuffle + encrypt
+        isDeckShuffled: deckState?.isShuffled ?? false,
         // Auto-update delegation status based on detection
         // Reset to false when table is Waiting (hand is over), otherwise preserve/detect
         isGameDelegated: tableStatus === "Waiting" ? false : (detectedDelegation || gameState.isGameDelegated),
@@ -1001,6 +1009,8 @@ export function usePokerGame(): UsePokerGameResult {
 
   // ============================================================
   // MagicBlock VRF: Request shuffle (initiates VRF randomness)
+  // Modified Option B: Callback now handles shuffle + encrypt ATOMICALLY
+  // VRF seed is NEVER stored - only used in memory during callback!
   // ============================================================
   const requestShuffle = useCallback(async (): Promise<string> => {
     if (!program || !provider || !publicKey || !gameState.tablePDA || !gameState.table) {
@@ -1016,6 +1026,22 @@ export function usePokerGame(): UsePokerGameResult {
       const [handPDA] = getHandPDA(gameState.tablePDA, handNumber);
       const [deckPDA] = getDeckPDA(gameState.tablePDA, handNumber);
 
+      // Build seat accounts for the callback (Modified Option B)
+      // The callback will shuffle + encrypt atomically using these accounts
+      const occupied = getOccupiedSeats(gameState.table.occupiedSeats);
+      const seatAccounts: { pubkey: PublicKey; isSigner: boolean; isWritable: boolean }[] = [];
+      for (const seatIndex of occupied) {
+        const [seatPDA] = getSeatPDA(gameState.tablePDA!, seatIndex);
+        seatAccounts.push({
+          pubkey: seatPDA,
+          isSigner: false,
+          isWritable: true,
+        });
+      }
+
+      console.log("MODIFIED OPTION B: Requesting VRF shuffle with atomic encrypt");
+      console.log(`Passing ${seatAccounts.length} seat accounts to callback`);
+
       const tx = await program.methods
         .requestShuffle()
         .accounts({
@@ -1024,17 +1050,21 @@ export function usePokerGame(): UsePokerGameResult {
           handState: handPDA,
           deckState: deckPDA,
           oracleQueue: DEFAULT_QUEUE,
+          incoProgram: INCO_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
         })
+        .remainingAccounts(seatAccounts)
         .rpc();
 
       await provider.connection.confirmTransaction(tx, "confirmed");
 
-      // Wait for VRF callback to complete the shuffle
-      console.log("VRF shuffle requested, waiting for oracle callback...");
+      // Wait for VRF callback to complete shuffle + encrypt atomically
+      console.log("VRF shuffle requested, waiting for oracle callback (atomic shuffle + encrypt)...");
       const shuffled = await waitForShuffle(provider.connection, deckPDA, 30000, 1000);
 
       if (shuffled) {
-        console.log("VRF shuffle completed!");
+        console.log("ATOMIC shuffle + encrypt completed! Cards are now encrypted.");
+        console.log("SECURITY: VRF seed was NEVER stored - only used in callback memory!");
         setGameState((prev) => ({ ...prev, isShuffling: false, isDeckShuffled: true }));
       } else {
         console.warn("VRF shuffle timed out");
@@ -1055,16 +1085,25 @@ export function usePokerGame(): UsePokerGameResult {
   }, [program, provider, publicKey, gameState.tablePDA, gameState.table, refreshState]);
 
   // ============================================================
-  // MagicBlock VRF: Deal cards after VRF shuffle
-  // Routes through ER when seats are delegated for privacy
+  // DEPRECATED: MagicBlock VRF deal cards
+  // With Modified Option B, the callback_shuffle now handles everything!
+  // This function is kept for backwards compatibility only.
+  // For new games: requestShuffle() does shuffle + encrypt atomically.
   // ============================================================
   const dealCardsVrf = useCallback(async (): Promise<string> => {
     if (!program || !provider || !publicKey || !gameState.tablePDA || !gameState.table) {
       throw new Error("Table not ready");
     }
 
+    // With Modified Option B, requestShuffle handles everything
+    // Check if cards are already dealt (callback did the work)
+    if (gameState.isDeckShuffled && gameState.phase !== "Dealing") {
+      console.log("DEPRECATED: Cards already dealt by atomic callback. Skipping.");
+      return "already-dealt";
+    }
+
     if (!gameState.isDeckShuffled) {
-      throw new Error("VRF seed not received yet. Call requestShuffle first.");
+      throw new Error("VRF not complete yet. Call requestShuffle first - it now handles dealing!");
     }
 
     // Check if accounts are actually delegated (regardless of local state)

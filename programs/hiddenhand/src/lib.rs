@@ -80,22 +80,31 @@ pub mod hiddenhand {
 
     // ============================================================
     // MagicBlock VRF Instructions (Provably Fair Shuffling)
+    // Modified Option B: Atomic shuffle + encrypt in callback
+    // VRF seed is NEVER stored - only used in memory!
     // ============================================================
 
     /// Request VRF randomness for card shuffling
     /// This initiates the shuffle - VRF oracle will callback with randomness
+    ///
+    /// IMPORTANT: Pass all player seat accounts as remaining_accounts!
+    /// The callback will shuffle + encrypt cards atomically.
     pub fn request_shuffle(ctx: Context<RequestShuffle>) -> Result<()> {
         instructions::request_shuffle::handler(ctx)
     }
 
-    /// VRF callback - receives randomness and shuffles the deck
+    /// VRF callback - ATOMIC shuffle + encrypt
     /// Called by VRF oracle, not directly by users
+    ///
+    /// SECURITY: The VRF seed is NEVER stored in account state!
+    /// Shuffle and encryption happen atomically in this single transaction.
     pub fn callback_shuffle(ctx: Context<CallbackShuffle>, randomness: [u8; 32]) -> Result<()> {
         instructions::callback_shuffle::handler(ctx, randomness)
     }
 
-    /// Deal hole cards after VRF shuffle is complete
-    /// Use this instead of deal_cards for provably fair games
+    /// DEPRECATED: Use request_shuffle instead!
+    /// Deal hole cards - kept for backwards compatibility only.
+    /// With Modified Option B, callback_shuffle handles everything atomically.
     pub fn deal_cards_vrf(ctx: Context<DealCardsVrf>) -> Result<()> {
         instructions::deal_cards_vrf::handler(ctx)
     }

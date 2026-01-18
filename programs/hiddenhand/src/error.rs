@@ -121,4 +121,16 @@ pub enum HiddenHandError {
 
     #[msg("All active players must reveal before showdown can complete")]
     PlayersNotRevealed,
+
+    #[msg("Timeout not reached - must wait longer")]
+    TimeoutNotReached,
+
+    #[msg("This is not your seat")]
+    NotYourSeat,
+
+    #[msg("Cards are not encrypted yet")]
+    CardsNotEncrypted,
+
+    #[msg("Cannot perform this action while hand is in progress")]
+    HandInProgress,
 }

@@ -31,6 +31,11 @@ pub mod encrypt_hole_cards;
 // Reveal cards for showdown (with Ed25519 verification)
 pub mod reveal_cards;
 
+// Game liveness - prevent stuck games
+pub mod grant_own_allowance;
+pub mod timeout_reveal;
+pub mod close_inactive_table;
+
 // Re-export everything for convenience
 // The `handler` name conflicts are expected and handled by Anchor's program macro
 #[allow(ambiguous_glob_reexports)]
@@ -73,3 +78,9 @@ pub use timeout_player::*;
 pub use encrypt_hole_cards::*;
 #[allow(ambiguous_glob_reexports)]
 pub use reveal_cards::*;
+#[allow(ambiguous_glob_reexports)]
+pub use grant_own_allowance::*;
+#[allow(ambiguous_glob_reexports)]
+pub use timeout_reveal::*;
+#[allow(ambiguous_glob_reexports)]
+pub use close_inactive_table::*;

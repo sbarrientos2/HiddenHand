@@ -181,6 +181,32 @@ pub mod hiddenhand {
         instructions::reveal_cards::handler(ctx, card1, card2)
     }
 
+    // ============================================================
+    // Game Liveness Instructions (Prevent Stuck Games)
+    // ============================================================
+
+    /// Allow player to grant their OWN decryption allowance after timeout
+    /// If authority doesn't grant allowances within 60 seconds, players can self-grant
+    /// This prevents the game from getting stuck if authority is AFK
+    pub fn grant_own_allowance(ctx: Context<GrantOwnAllowance>, seat_index: u8) -> Result<()> {
+        instructions::grant_own_allowance::handler(ctx, seat_index)
+    }
+
+    /// Timeout a player who hasn't revealed cards at showdown
+    /// After 3 minutes without revealing, any player can call this to "muck" the non-revealer
+    /// Mucked players forfeit their claim to the pot (standard poker rules)
+    pub fn timeout_reveal(ctx: Context<TimeoutReveal>, target_seat: u8) -> Result<()> {
+        instructions::timeout_reveal::handler(ctx, target_seat)
+    }
+
+    /// Close an inactive table and return all funds to players
+    /// Can be called by anyone after 1 hour of inactivity
+    /// Table must be in Waiting status (not mid-hand)
+    /// All seated players receive their chips back
+    pub fn close_inactive_table(ctx: Context<CloseInactiveTable>) -> Result<()> {
+        instructions::close_inactive_table::handler(ctx)
+    }
+
     // TODO: Add community card reveal instruction
     // pub fn reveal_community(ctx: Context<RevealCommunity>, count: u8) -> Result<()> {
     //     // Reveal flop (3), turn (1), or river (1)

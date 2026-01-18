@@ -15,6 +15,9 @@ pub const COMMUNITY_CARDS: usize = 5;
 // Timeouts (in seconds - works consistently across all environments including MagicBlock ER)
 pub const ACTION_TIMEOUT_SECONDS: i64 = 60; // 60 seconds to act
 pub const DEAL_TIMEOUT_SECONDS: i64 = 30; // 30 seconds to deal (faster since it should be immediate)
+pub const ALLOWANCE_TIMEOUT_SECONDS: i64 = 60; // 60 seconds for authority to grant allowances
+pub const REVEAL_TIMEOUT_SECONDS: i64 = 180; // 3 minutes to reveal cards at showdown (generous for emergencies)
+pub const TABLE_INACTIVE_TIMEOUT_SECONDS: i64 = 3600; // 1 hour of inactivity to auto-close table
 pub const EMERGENCY_TIMEOUT_SECONDS: i64 = 86400; // 24 hours for emergency withdraw
 
 // Betting

@@ -1140,6 +1140,8 @@ export function usePokerGame(): UsePokerGameResult {
           deckState: deckPDA,
           sbSeat: sbSeatPDA,
           bbSeat: bbSeatPDA,
+          incoProgram: INCO_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
         })
         .remainingAccounts(remainingAccounts)
         .rpc();

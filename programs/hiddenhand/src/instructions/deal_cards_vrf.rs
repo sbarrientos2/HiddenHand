@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 
 use crate::constants::*;
 use crate::error::HiddenHandError;
+use crate::inco_cpi::{self, INCO_PROGRAM_ID};
 use crate::state::{DeckState, GamePhase, HandState, PlayerSeat, PlayerStatus, Table, TableStatus};
 
 /// Deal cards after VRF seed has been received
@@ -50,6 +51,13 @@ pub struct DealCardsVrf<'info> {
         bump = bb_seat.bump
     )]
     pub bb_seat: Account<'info, PlayerSeat>,
+
+    /// The Inco Lightning program for encryption
+    /// CHECK: Verified by address constraint
+    #[account(address = INCO_PROGRAM_ID)]
+    pub inco_program: AccountInfo<'info>,
+
+    pub system_program: Program<'info, System>,
 }
 
 /// Deal hole cards to all players and post blinds (after VRF shuffle)
@@ -134,7 +142,10 @@ pub fn handler(ctx: Context<DealCardsVrf>) -> Result<()> {
     // Reserve first 5 cards for community cards (indices 0-4)
     deck_state.deal_index = 5;
 
-    msg!("Deck shuffled on ER. Card order is now private.");
+    msg!("Deck shuffled with VRF randomness. Now encrypting cards via Inco FHE...");
+
+    // Get caller info for Inco CPI
+    let caller_info = ctx.accounts.authority.to_account_info();
 
     // Convert to Vec for dealing
     let deck: Vec<u8> = deck_state.cards.iter().map(|c| *c as u8).collect();
@@ -152,15 +163,28 @@ pub fn handler(ctx: Context<DealCardsVrf>) -> Result<()> {
         sb_seat.current_bet = 0;
         sb_seat.total_bet_this_hand = 0;
         sb_seat.has_acted = false;
+        sb_seat.cards_revealed = false;
+        sb_seat.revealed_card_1 = 255;
+        sb_seat.revealed_card_2 = 255;
 
         let sb_amount = sb_seat.place_bet(table.small_blind);
         hand_state.pot = hand_state.pot.saturating_add(sb_amount);
         sb_seat.status = PlayerStatus::Playing;
-        sb_seat.hole_card_1 = deck[deal_idx] as u128;
-        sb_seat.hole_card_2 = deck[deal_idx + 1] as u128;
+
+        // ATOMIC ENCRYPTION: Encrypt cards via Inco FHE
+        msg!("Encrypting cards for SB (seat {})...", sb_index);
+        let encrypted1 = inco_cpi::encrypt_card(&caller_info, deck[deal_idx])?;
+        let encrypted2 = inco_cpi::encrypt_card(&caller_info, deck[deal_idx + 1])?;
+        sb_seat.hole_card_1 = encrypted1.unwrap();
+        sb_seat.hole_card_2 = encrypted2.unwrap();
+
+        // Store encrypted in deck for consistency
+        deck_state.cards[deal_idx] = encrypted1.unwrap();
+        deck_state.cards[deal_idx + 1] = encrypted2.unwrap();
+
         deal_idx += 2;
         active_count += 1;
-        msg!("SB (seat {}) posts {} and receives cards", sb_index, sb_amount);
+        msg!("SB (seat {}) posts {} and receives encrypted cards", sb_index, sb_amount);
     } else {
         // Remove from active players - no chips
         active_players &= !(1 << sb_index);
@@ -174,15 +198,28 @@ pub fn handler(ctx: Context<DealCardsVrf>) -> Result<()> {
         bb_seat.current_bet = 0;
         bb_seat.total_bet_this_hand = 0;
         bb_seat.has_acted = false;
+        bb_seat.cards_revealed = false;
+        bb_seat.revealed_card_1 = 255;
+        bb_seat.revealed_card_2 = 255;
 
         let bb_amount = bb_seat.place_bet(table.big_blind);
         hand_state.pot = hand_state.pot.saturating_add(bb_amount);
         bb_seat.status = PlayerStatus::Playing;
-        bb_seat.hole_card_1 = deck[deal_idx] as u128;
-        bb_seat.hole_card_2 = deck[deal_idx + 1] as u128;
+
+        // ATOMIC ENCRYPTION: Encrypt cards via Inco FHE
+        msg!("Encrypting cards for BB (seat {})...", bb_index);
+        let encrypted1 = inco_cpi::encrypt_card(&caller_info, deck[deal_idx])?;
+        let encrypted2 = inco_cpi::encrypt_card(&caller_info, deck[deal_idx + 1])?;
+        bb_seat.hole_card_1 = encrypted1.unwrap();
+        bb_seat.hole_card_2 = encrypted2.unwrap();
+
+        // Store encrypted in deck for consistency
+        deck_state.cards[deal_idx] = encrypted1.unwrap();
+        deck_state.cards[deal_idx + 1] = encrypted2.unwrap();
+
         deal_idx += 2;
         active_count += 1;
-        msg!("BB (seat {}) posts {} and receives cards", bb_index, bb_amount);
+        msg!("BB (seat {}) posts {} and receives encrypted cards", bb_index, bb_amount);
     } else {
         // Remove from active players - no chips
         active_players &= !(1 << bb_index);
@@ -208,15 +245,28 @@ pub fn handler(ctx: Context<DealCardsVrf>) -> Result<()> {
                 let mut seat = PlayerSeat::try_deserialize(&mut &data[..])?;
 
                 if has_chips {
-                    // Player has chips - deal cards
-                    seat.hole_card_1 = deck[deal_idx] as u128;
-                    seat.hole_card_2 = deck[deal_idx + 1] as u128;
+                    // ATOMIC ENCRYPTION: Encrypt cards via Inco FHE
+                    msg!("Encrypting cards for seat {}...", seat_index);
+                    let encrypted1 = inco_cpi::encrypt_card(&caller_info, deck[deal_idx])?;
+                    let encrypted2 = inco_cpi::encrypt_card(&caller_info, deck[deal_idx + 1])?;
+
+                    seat.hole_card_1 = encrypted1.unwrap();
+                    seat.hole_card_2 = encrypted2.unwrap();
                     seat.status = PlayerStatus::Playing;
                     seat.current_bet = 0;
                     seat.total_bet_this_hand = 0;
+                    seat.has_acted = false;
+                    seat.cards_revealed = false;
+                    seat.revealed_card_1 = 255;
+                    seat.revealed_card_2 = 255;
+
+                    // Store encrypted in deck for consistency
+                    deck_state.cards[deal_idx] = encrypted1.unwrap();
+                    deck_state.cards[deal_idx + 1] = encrypted2.unwrap();
+
                     deal_idx += 2;
                     active_count += 1;
-                    msg!("Dealt hole cards to seat {}", seat_index);
+                    msg!("Dealt encrypted hole cards to seat {}", seat_index);
                 } else {
                     // Player has no chips - sit them out
                     active_players &= !(1 << seat_index);
@@ -256,11 +306,12 @@ pub fn handler(ctx: Context<DealCardsVrf>) -> Result<()> {
     hand_state.all_in_players = 0; // No one is all-in yet
 
     msg!(
-        "VRF-shuffled cards dealt. Pot: {}. Phase: PreFlop. Action on seat {}. Active players: {}",
+        "VRF-shuffled + Inco-encrypted cards dealt. Pot: {}. Phase: PreFlop. Action on seat {}. Active players: {}",
         hand_state.pot,
         hand_state.action_on,
         active_count
     );
+    msg!("IMPORTANT: Call grant_card_allowance for each player to enable decryption");
 
     Ok(())
 }

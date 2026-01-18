@@ -207,6 +207,11 @@ export interface UsePokerGameResult {
   grantAllPlayersAllowances: () => Promise<void>; // Grant allowances only (for atomic encryption)
   decryptMyCards: () => Promise<void>; // Client-side decrypt own cards
 
+  // Game Liveness Actions (prevent stuck games)
+  grantOwnAllowance: () => Promise<string>; // Self-grant allowance after 60s timeout
+  timeoutReveal: (targetSeat: number) => Promise<string>; // Muck non-revealing player after 3 min
+  closeInactiveTable: () => Promise<string>; // Close inactive table after 1 hour, return funds
+
   // Utilities
   refreshState: () => Promise<void>;
   setTableId: (tableId: string) => void;
@@ -1833,6 +1838,179 @@ export function usePokerGame(): UsePokerGameResult {
     }
   }, [program, provider, publicKey, gameState.tablePDA, gameState.table, gameState.currentPlayerSeat, gameState.decryptedCards]);
 
+  // ============================================================
+  // Game Liveness: Self-grant allowance after timeout
+  // ============================================================
+  const grantOwnAllowance = useCallback(async (): Promise<string> => {
+    if (!program || !provider || !publicKey || !gameState.tablePDA || !gameState.table || gameState.currentPlayerSeat === null) {
+      throw new Error("Not ready - wallet not connected or not at table");
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const handNumber = BigInt(gameState.table.handNumber.toNumber());
+      const [handPDA] = getHandPDA(gameState.tablePDA, handNumber);
+      const [seatPDA] = getSeatPDA(gameState.tablePDA, gameState.currentPlayerSeat);
+
+      // Fetch seat to get encrypted handles
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const accounts = program.account as any;
+      const seat = await accounts.playerSeat.fetch(seatPDA) as PlayerSeatAccount;
+
+      const handle1 = BigInt(seat.holeCard1.toString());
+      const handle2 = BigInt(seat.holeCard2.toString());
+
+      // Verify cards are encrypted
+      if (handle1 <= BigInt(255) || handle2 <= BigInt(255)) {
+        throw new Error("Cards not encrypted - nothing to grant allowance for");
+      }
+
+      // Derive allowance PDAs
+      const [allowancePDA1] = getIncoAllowancePDA(handle1, publicKey);
+      const [allowancePDA2] = getIncoAllowancePDA(handle2, publicKey);
+
+      console.log("Self-granting allowance after timeout...");
+
+      const tx = await program.methods
+        .grantOwnAllowance(gameState.currentPlayerSeat)
+        .accounts({
+          player: publicKey,
+          table: gameState.tablePDA,
+          handState: handPDA,
+          playerSeat: seatPDA,
+          allowanceCard1: allowancePDA1,
+          allowanceCard2: allowancePDA2,
+          incoProgram: INCO_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc();
+
+      await provider.connection.confirmTransaction(tx, "confirmed");
+      console.log("Self-granted allowance:", tx);
+
+      // Update state
+      setGameState((prev) => ({
+        ...prev,
+        areAllowancesGranted: true,
+        encryptionHandNumber: gameState.table!.handNumber.toNumber(),
+      }));
+
+      await refreshState();
+      return tx;
+    } catch (e) {
+      const message = parseAnchorError(e);
+      setError(message);
+      throw e;
+    } finally {
+      setLoading(false);
+    }
+  }, [program, provider, publicKey, gameState.tablePDA, gameState.table, gameState.currentPlayerSeat, refreshState]);
+
+  // ============================================================
+  // Game Liveness: Timeout reveal - muck non-revealing player
+  // ============================================================
+  const timeoutReveal = useCallback(async (targetSeat: number): Promise<string> => {
+    if (!program || !provider || !publicKey || !gameState.tablePDA || !gameState.table) {
+      throw new Error("Not ready - wallet not connected or no table");
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const handNumber = BigInt(gameState.table.handNumber.toNumber());
+      const [handPDA] = getHandPDA(gameState.tablePDA, handNumber);
+      const [targetSeatPDA] = getSeatPDA(gameState.tablePDA, targetSeat);
+
+      console.log(`Timing out player at seat ${targetSeat} for not revealing cards...`);
+
+      const tx = await program.methods
+        .timeoutReveal(targetSeat)
+        .accounts({
+          caller: publicKey,
+          table: gameState.tablePDA,
+          handState: handPDA,
+          targetPlayer: targetSeatPDA,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc();
+
+      await provider.connection.confirmTransaction(tx, "confirmed");
+      console.log("Player timed out and mucked:", tx);
+
+      await refreshState();
+      return tx;
+    } catch (e) {
+      const message = parseAnchorError(e);
+      setError(message);
+      throw e;
+    } finally {
+      setLoading(false);
+    }
+  }, [program, provider, publicKey, gameState.tablePDA, gameState.table, refreshState]);
+
+  // ============================================================
+  // Game Liveness: Close inactive table and return funds
+  // ============================================================
+  const closeInactiveTable = useCallback(async (): Promise<string> => {
+    if (!program || !provider || !publicKey || !gameState.tablePDA || !gameState.table) {
+      throw new Error("Not ready - wallet not connected or no table");
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const [vaultPDA] = getVaultPDA(gameState.tablePDA);
+
+      // Build remaining accounts: [seat, wallet, seat, wallet, ...]
+      const remainingAccounts: { pubkey: PublicKey; isSigner: boolean; isWritable: boolean }[] = [];
+
+      for (const player of gameState.players) {
+        if (player.status !== "empty" && player.player) {
+          const [seatPDA] = getSeatPDA(gameState.tablePDA, player.seatIndex);
+          remainingAccounts.push(
+            { pubkey: seatPDA, isSigner: false, isWritable: true },
+            { pubkey: new PublicKey(player.player), isSigner: false, isWritable: true }
+          );
+        }
+      }
+
+      console.log(`Closing inactive table, returning funds to ${remainingAccounts.length / 2} players...`);
+
+      const tx = await program.methods
+        .closeInactiveTable()
+        .accounts({
+          caller: publicKey,
+          table: gameState.tablePDA,
+          vault: vaultPDA,
+          systemProgram: SystemProgram.programId,
+        })
+        .remainingAccounts(remainingAccounts)
+        .rpc();
+
+      await provider.connection.confirmTransaction(tx, "confirmed");
+      console.log("Table closed and funds returned:", tx);
+
+      // Clear local state
+      setGameState((prev) => ({
+        ...prev,
+        tableStatus: "Closed",
+        players: [],
+      }));
+
+      return tx;
+    } catch (e) {
+      const message = parseAnchorError(e);
+      setError(message);
+      throw e;
+    } finally {
+      setLoading(false);
+    }
+  }, [program, provider, publicKey, gameState.tablePDA, gameState.table, gameState.players]);
+
   // Player action (routes through ER when delegated for low latency)
   const playerAction = useCallback(
     async (action: ActionType): Promise<string> => {
@@ -2141,6 +2319,10 @@ export function usePokerGame(): UsePokerGameResult {
     grantAllPlayersAllowances,
     decryptMyCards,
     revealCards,
+    // Game Liveness (prevent stuck games)
+    grantOwnAllowance,
+    timeoutReveal,
+    closeInactiveTable,
     // Utilities
     refreshState,
     setTableId,

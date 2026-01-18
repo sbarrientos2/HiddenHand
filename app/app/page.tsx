@@ -50,6 +50,10 @@ export default function Home() {
     decryptMyCards,
     revealCards,
     setUseIncoPrivacy,
+    // Game Liveness (prevent stuck games)
+    grantOwnAllowance,
+    timeoutReveal,
+    closeInactiveTable,
   } = usePokerGame();
 
   // Expose hook functions to window for console testing (only once on mount)
@@ -67,11 +71,14 @@ export default function Home() {
       pokerGame.revealCards = revealCards;
       pokerGame.delegateGameState = delegateGameState;
       pokerGame.undelegateGameState = undelegateGameState;
+      pokerGame.grantOwnAllowance = grantOwnAllowance;
+      pokerGame.timeoutReveal = timeoutReveal;
+      pokerGame.closeInactiveTable = closeInactiveTable;
       // Getter for fresh gameState (avoids stale closure)
       pokerGame.getGameState = () => gameState;
       (window as any).__pokerGame = pokerGame;
     }
-  }, [encryptHoleCards, grantCardAllowance, encryptAndGrantCards, encryptAllPlayersCards, grantAllPlayersAllowances, decryptMyCards, revealCards, delegateGameState, undelegateGameState]);
+  }, [encryptHoleCards, grantCardAllowance, encryptAndGrantCards, encryptAllPlayersCards, grantAllPlayersAllowances, decryptMyCards, revealCards, delegateGameState, undelegateGameState, grantOwnAllowance, timeoutReveal, closeInactiveTable]);
 
   // Transaction toast notifications
   const {
@@ -636,6 +643,31 @@ export default function Home() {
                       </button>
                     )}
 
+                    {/* Close inactive table - shows after 1 hour of inactivity */}
+                    {gameState.tableStatus === "Waiting" &&
+                     gameState.lastReadyTime &&
+                     (Date.now() / 1000 - gameState.lastReadyTime) >= 3600 && (
+                      <button
+                        onClick={async () => {
+                          if (confirm("Are you sure you want to close this table? All funds will be returned to players.")) {
+                            try {
+                              await closeInactiveTable();
+                              addGameEvent("system", "Inactive table closed, funds returned to all players");
+                            } catch (e) {
+                              console.error("Failed to close table:", e);
+                            }
+                          }
+                        }}
+                        disabled={loading}
+                        className="btn-warning px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50 flex items-center gap-2"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                        Close Inactive Table
+                      </button>
+                    )}
+
                     {/* Delegation Status */}
                     {currentPlayer && (
                       <div className={`flex items-center gap-2 glass-dark px-3 py-1.5 rounded-lg ${
@@ -965,6 +997,27 @@ export default function Home() {
                             Grant Allowances
                           </button>
                         )}
+                        {/* Self-grant allowance button - for non-authority after 60s timeout */}
+                        {gameState.areCardsEncrypted && !gameState.areAllowancesGranted && !gameState.isAuthority && !gameState.isEncrypting &&
+                         gameState.lastActionTime && (Date.now() / 1000 - gameState.lastActionTime) >= 60 && (
+                          <button
+                            onClick={async () => {
+                              try {
+                                await grantOwnAllowance();
+                                addGameEvent("privacy", "Self-granted decryption allowance after timeout");
+                              } catch (e) {
+                                console.error("Failed to self-grant allowance:", e);
+                              }
+                            }}
+                            disabled={loading}
+                            className="btn-warning px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50 flex items-center gap-2"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            Grant My Allowance (Timeout)
+                          </button>
+                        )}
                         {/* Allowances granted indicator */}
                         {gameState.areCardsEncrypted && gameState.areAllowancesGranted && (
                           <div className="flex items-center gap-2 glass-dark px-3 py-1.5 rounded-lg border border-green-500/30">
@@ -998,6 +1051,35 @@ export default function Home() {
                           <p className="text-xs text-[var(--text-muted)] mt-1">
                             All players must reveal before showdown
                           </p>
+                          {/* Timeout reveal option after 3 minutes */}
+                          {gameState.lastActionTime && (Date.now() / 1000 - gameState.lastActionTime) >= 180 && (
+                            <div className="mt-3 pt-3 border-t border-white/10">
+                              <p className="text-orange-400 text-xs mb-2">
+                                3 minute timeout reached - you can muck non-revealing players
+                              </p>
+                              <div className="flex flex-wrap gap-2 justify-center">
+                                {activePlayers
+                                  .filter(p => !p.cardsRevealed && p.status !== "folded")
+                                  .map(p => (
+                                    <button
+                                      key={p.seatIndex}
+                                      onClick={async () => {
+                                        try {
+                                          await timeoutReveal(p.seatIndex);
+                                          addGameEvent("system", `Player at seat ${p.seatIndex + 1} mucked for not revealing`);
+                                        } catch (e) {
+                                          console.error("Failed to timeout player:", e);
+                                        }
+                                      }}
+                                      disabled={loading}
+                                      className="btn-danger px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-50"
+                                    >
+                                      Muck Seat {p.seatIndex + 1}
+                                    </button>
+                                  ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
                     </>

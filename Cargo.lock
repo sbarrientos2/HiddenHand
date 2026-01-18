@@ -400,6 +400,36 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ace50bade8e6234aa140d9a2f552bbee1db4d353f69b8217bc503490fc1a9f26"
 
 [[package]]
+name = "aya_base"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f56a454eadb6af21c4a95d3ad101a0fa9bc92d38f929bfe435f9438a6f9c2229"
+dependencies = [
+ "fastrand",
+]
+
+[[package]]
+name = "aya_codegen"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "38f6e4947551305b954ae3ba28710b425ac273d41923009ba11150e5f65bcccf"
+dependencies = [
+ "aya_base",
+ "miniphf",
+]
+
+[[package]]
+name = "aya_poker"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac2be5838ecd6b19a973635f6fb85052496742d2c98f50a96af6f38af7fd265b"
+dependencies = [
+ "aya_base",
+ "aya_codegen",
+ "quickdiv",
+]
+
+[[package]]
 name = "base64"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -866,6 +896,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
+name = "fastrand"
+version = "2.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be"
+
+[[package]]
 name = "feature-probe"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -955,9 +991,11 @@ name = "hiddenhand"
 version = "0.1.0"
 dependencies = [
  "anchor-lang 0.32.1",
+ "aya_poker",
  "constant_time_eq",
  "ephemeral-rollups-sdk 0.6.5",
  "ephemeral-vrf-sdk",
+ "rand 0.8.5",
  "sha2 0.10.8",
 ]
 
@@ -1135,6 +1173,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "miniphf"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2e264bd1a231edea70ebef68f70127a0d4ed21f0e5edaf0de3bf8fb482f85040"
+dependencies = [
+ "quickdiv",
+]
+
+[[package]]
 name = "num-bigint"
 version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1265,6 +1312,12 @@ checksum = "02b3e5e68a3a1a02aad3ec490a98007cbc13c37cbe84a3cd7b8e406d76e7f778"
 dependencies = [
  "unicode-ident",
 ]
+
+[[package]]
+name = "quickdiv"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "affb828694e2f006fdcd24d9096eab97dea9f100ee36b19886c9ea4531d49483"
 
 [[package]]
 name = "quote"

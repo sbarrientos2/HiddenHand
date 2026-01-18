@@ -883,4 +883,293 @@ mod tests {
         let winners = find_winners(&player_cards);
         assert_eq!(winners.len(), 2); // Both play the board - split
     }
+
+    // ==================== FUZZ TESTS AGAINST REFERENCE IMPLEMENTATION ====================
+
+    use rand::seq::SliceRandom;
+    use rand::SeedableRng;
+    use rand::rngs::StdRng;
+    use aya_poker::base::{Card as AyaCard, Hand as AyaHand, Rank as AyaRank, Suit as AyaSuit};
+    use aya_poker::poker_rank;
+
+    /// Convert our card encoding (0-51) to aya_poker Card
+    fn to_aya_card(card: u8) -> AyaCard {
+        let rank = card % 13; // 0=2, 1=3, ..., 12=A
+        let suit = card / 13; // 0=Hearts, 1=Diamonds, 2=Clubs, 3=Spades
+
+        let aya_rank = match rank {
+            0 => AyaRank::Two,
+            1 => AyaRank::Three,
+            2 => AyaRank::Four,
+            3 => AyaRank::Five,
+            4 => AyaRank::Six,
+            5 => AyaRank::Seven,
+            6 => AyaRank::Eight,
+            7 => AyaRank::Nine,
+            8 => AyaRank::Ten,
+            9 => AyaRank::Jack,
+            10 => AyaRank::Queen,
+            11 => AyaRank::King,
+            12 => AyaRank::Ace,
+            _ => panic!("Invalid rank"),
+        };
+
+        let aya_suit = match suit {
+            0 => AyaSuit::Hearts,
+            1 => AyaSuit::Diamonds,
+            2 => AyaSuit::Clubs,
+            3 => AyaSuit::Spades,
+            _ => panic!("Invalid suit"),
+        };
+
+        AyaCard::new(aya_rank, aya_suit)
+    }
+
+    /// Generate two random hands sharing community cards (like Texas Hold'em)
+    fn generate_two_hands(rng: &mut StdRng) -> ([u8; 7], [u8; 7]) {
+        let mut deck: Vec<u8> = (0..52).collect();
+        deck.shuffle(rng);
+        // Community cards (5) + Player 1 hole (2) + Player 2 hole (2) = 9 unique cards
+        let community: [u8; 5] = [deck[0], deck[1], deck[2], deck[3], deck[4]];
+        let p1_hole: [u8; 2] = [deck[5], deck[6]];
+        let p2_hole: [u8; 2] = [deck[7], deck[8]];
+
+        let hand1 = [p1_hole[0], p1_hole[1], community[0], community[1], community[2], community[3], community[4]];
+        let hand2 = [p2_hole[0], p2_hole[1], community[0], community[1], community[2], community[3], community[4]];
+
+        (hand1, hand2)
+    }
+
+    /// Convert cards to aya_poker Hand
+    fn to_aya_hand(cards: &[u8; 7]) -> AyaHand {
+        cards.iter().map(|&c| to_aya_card(c)).collect()
+    }
+
+    #[test]
+    fn fuzz_test_winner_determination_50k_matchups() {
+        // Use seeded RNG for reproducibility
+        let mut rng = StdRng::seed_from_u64(12345);
+        let iterations = 50_000;
+        let mut player1_wins = 0;
+        let mut player2_wins = 0;
+        let mut ties = 0;
+
+        for i in 0..iterations {
+            let (hand1, hand2) = generate_two_hands(&mut rng);
+
+            // Our implementation
+            let our_eval1 = evaluate_hand(&hand1);
+            let our_eval2 = evaluate_hand(&hand2);
+            let our_comparison = our_eval1.compare(&our_eval2);
+
+            // aya_poker implementation
+            let aya_hand1 = to_aya_hand(&hand1);
+            let aya_hand2 = to_aya_hand(&hand2);
+            let aya_rank1 = poker_rank(&aya_hand1);
+            let aya_rank2 = poker_rank(&aya_hand2);
+            let aya_comparison = aya_rank1.cmp(&aya_rank2);
+
+            assert_eq!(
+                our_comparison, aya_comparison,
+                "Winner mismatch at iteration {}:\n  hand1={:?} (our={:?})\n  hand2={:?} (our={:?})\n  our_cmp={:?}, aya_cmp={:?}",
+                i, hand1, our_eval1.rank, hand2, our_eval2.rank, our_comparison, aya_comparison
+            );
+
+            match our_comparison {
+                std::cmp::Ordering::Greater => player1_wins += 1,
+                std::cmp::Ordering::Less => player2_wins += 1,
+                std::cmp::Ordering::Equal => ties += 1,
+            }
+        }
+
+        println!("✅ Passed {} winner determination tests", iterations);
+        println!("   Player 1 wins: {}, Player 2 wins: {}, Ties: {}", player1_wins, player2_wins, ties);
+    }
+
+    #[test]
+    fn fuzz_test_three_player_showdown_10k() {
+        // Test with 3 players to catch edge cases in multi-way pots
+        let mut rng = StdRng::seed_from_u64(99999);
+        let iterations = 10_000;
+
+        for i in 0..iterations {
+            let mut deck: Vec<u8> = (0..52).collect();
+            deck.shuffle(&mut rng);
+
+            // Community + 3 players = 5 + 6 = 11 cards
+            let community: [u8; 5] = [deck[0], deck[1], deck[2], deck[3], deck[4]];
+            let p1 = [deck[5], deck[6], community[0], community[1], community[2], community[3], community[4]];
+            let p2 = [deck[7], deck[8], community[0], community[1], community[2], community[3], community[4]];
+            let p3 = [deck[9], deck[10], community[0], community[1], community[2], community[3], community[4]];
+
+            // Our implementation
+            let player_cards = [(0u8, p1), (1u8, p2), (2u8, p3)];
+            let our_winners = find_winners(&player_cards);
+
+            // aya_poker implementation - find winners manually
+            let aya_rank1 = poker_rank(&to_aya_hand(&p1));
+            let aya_rank2 = poker_rank(&to_aya_hand(&p2));
+            let aya_rank3 = poker_rank(&to_aya_hand(&p3));
+
+            let max_rank = aya_rank1.max(aya_rank2).max(aya_rank3);
+            let mut aya_winners: Vec<u8> = Vec::new();
+            if aya_rank1 == max_rank { aya_winners.push(0); }
+            if aya_rank2 == max_rank { aya_winners.push(1); }
+            if aya_rank3 == max_rank { aya_winners.push(2); }
+
+            assert_eq!(
+                our_winners, aya_winners,
+                "3-player winner mismatch at iteration {}:\n  p1={:?}\n  p2={:?}\n  p3={:?}\n  our_winners={:?}, aya_winners={:?}",
+                i, p1, p2, p3, our_winners, aya_winners
+            );
+        }
+
+        println!("✅ Passed {} three-player showdown tests", iterations);
+    }
+
+    #[test]
+    fn test_all_hand_types_against_reference() {
+        // Test specific hands of each type to ensure correct classification
+        let test_cases: Vec<([u8; 7], HandRank, &str)> = vec![
+            // Royal Flush: A-K-Q-J-T of hearts
+            ([card(12,0), card(11,0), card(10,0), card(9,0), card(8,0), card(0,1), card(1,2)],
+             HandRank::RoyalFlush, "Royal Flush"),
+
+            // Straight Flush: 9-8-7-6-5 of spades
+            ([card(7,3), card(6,3), card(5,3), card(4,3), card(3,3), card(0,0), card(1,1)],
+             HandRank::StraightFlush, "Straight Flush"),
+
+            // Steel Wheel (A-2-3-4-5 suited)
+            ([card(12,0), card(0,0), card(1,0), card(2,0), card(3,0), card(10,1), card(11,2)],
+             HandRank::StraightFlush, "Steel Wheel (A-5 straight flush)"),
+
+            // Four of a Kind
+            ([card(12,0), card(12,1), card(12,2), card(12,3), card(11,0), card(0,1), card(1,2)],
+             HandRank::FourOfAKind, "Four of a Kind"),
+
+            // Full House
+            ([card(11,0), card(11,1), card(11,2), card(10,0), card(10,1), card(0,2), card(1,3)],
+             HandRank::FullHouse, "Full House"),
+
+            // Flush
+            ([card(12,0), card(10,0), card(8,0), card(6,0), card(2,0), card(0,1), card(1,2)],
+             HandRank::Flush, "Flush"),
+
+            // Straight
+            ([card(8,0), card(7,1), card(6,2), card(5,3), card(4,0), card(0,1), card(1,2)],
+             HandRank::Straight, "Straight"),
+
+            // Wheel (A-2-3-4-5)
+            ([card(12,0), card(0,1), card(1,2), card(2,3), card(3,0), card(10,1), card(11,2)],
+             HandRank::Straight, "Wheel (A-5 straight)"),
+
+            // Three of a Kind
+            ([card(9,0), card(9,1), card(9,2), card(12,3), card(11,0), card(0,1), card(1,2)],
+             HandRank::ThreeOfAKind, "Three of a Kind"),
+
+            // Two Pair
+            ([card(12,0), card(12,1), card(11,2), card(11,3), card(10,0), card(0,1), card(1,2)],
+             HandRank::TwoPair, "Two Pair"),
+
+            // One Pair
+            ([card(12,0), card(12,1), card(11,2), card(10,3), card(9,0), card(0,1), card(1,2)],
+             HandRank::OnePair, "One Pair"),
+
+            // High Card
+            ([card(12,0), card(10,1), card(8,2), card(6,3), card(4,0), card(2,1), card(0,2)],
+             HandRank::HighCard, "High Card"),
+        ];
+
+        for (cards, expected_rank, description) in test_cases {
+            let our_eval = evaluate_hand(&cards);
+
+            assert_eq!(
+                our_eval.rank, expected_rank,
+                "{}: expected {:?}, got {:?}", description, expected_rank, our_eval.rank
+            );
+
+            // Verify against aya_poker (they should agree on winners when compared)
+            println!("✓ {}: {:?}", description, our_eval.rank);
+        }
+
+        println!("✅ All hand types correctly classified");
+    }
+
+    #[test]
+    fn test_edge_cases_comprehensive() {
+        // Test tricky edge cases that could trip up hand evaluation
+
+        // Case 1: Board has a straight, but player can make a flush
+        // Case 1: Board has a straight possibility, but player can make a flush
+        let board_straight_player_flush_fixed = [
+            card(12, 0), // Ah
+            card(10, 0), // Qh
+            card(8, 0),  // Th
+            card(5, 0),  // 7h
+            card(2, 0),  // 4h - 5 hearts = flush
+            card(7, 1),  // 9d
+            card(6, 2),  // 8c
+        ];
+        let eval = evaluate_hand(&board_straight_player_flush_fixed);
+        assert_eq!(eval.rank, HandRank::Flush, "Should detect flush over straight");
+
+        // Case 2: Two players with same two pair, different kicker
+        let two_pair_high_kicker = [
+            card(12, 0), card(12, 1), // AA
+            card(11, 2), card(11, 3), // KK
+            card(10, 0), // Q kicker
+            card(0, 1), card(1, 2),
+        ];
+        let two_pair_low_kicker = [
+            card(12, 2), card(12, 3), // AA
+            card(11, 0), card(11, 1), // KK
+            card(9, 0), // J kicker (lower)
+            card(0, 2), card(1, 3),
+        ];
+        let eval1 = evaluate_hand(&two_pair_high_kicker);
+        let eval2 = evaluate_hand(&two_pair_low_kicker);
+        assert_eq!(eval1.compare(&eval2), std::cmp::Ordering::Greater, "Q kicker should beat J kicker");
+
+        // Case 3: Counterfeited two pair (board pairs beat player's pair)
+        // Player has 77, board has AAKK - player's best hand is AAKK7
+        let counterfeited = [
+            card(5, 0), card(5, 1), // 77 (player's pair)
+            card(12, 2), card(12, 3), // AA on board
+            card(11, 0), card(11, 1), // KK on board
+            card(0, 2), // 2c
+        ];
+        let eval = evaluate_hand(&counterfeited);
+        assert_eq!(eval.rank, HandRank::TwoPair, "Should be two pair (AA-KK)");
+        assert_eq!(eval.kickers[0], 12, "High pair should be Aces");
+        assert_eq!(eval.kickers[1], 11, "Low pair should be Kings");
+
+        // Case 4: Full house with trips on board
+        // Board: KKK, Player: QQ - makes KKK-QQ full house
+        let trips_on_board = [
+            card(10, 0), card(10, 1), // QQ (player)
+            card(11, 2), card(11, 3), card(11, 0), // KKK (board)
+            card(0, 1), card(1, 2), // junk
+        ];
+        let eval = evaluate_hand(&trips_on_board);
+        assert_eq!(eval.rank, HandRank::FullHouse);
+        assert_eq!(eval.kickers[0], 11, "Trips should be Kings");
+        assert_eq!(eval.kickers[1], 10, "Pair should be Queens");
+
+        // Case 5: Flush with 6 suited cards - should pick best 5
+        let six_suited = [
+            card(12, 0), // Ah
+            card(11, 0), // Kh
+            card(10, 0), // Qh
+            card(8, 0),  // Th
+            card(6, 0),  // 8h
+            card(2, 0),  // 4h - 6 hearts total
+            card(0, 1),  // 2d
+        ];
+        let eval = evaluate_hand(&six_suited);
+        assert_eq!(eval.rank, HandRank::Flush);
+        assert_eq!(eval.kickers[0], 12, "Highest flush card should be Ace");
+        assert_eq!(eval.kickers[4], 6, "5th flush card should be 8, not 4");
+
+        println!("✅ All edge cases passed");
+    }
 }

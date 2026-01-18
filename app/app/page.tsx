@@ -389,7 +389,7 @@ export default function Home() {
         currentBet: p.currentBet,
         holeCards,
         status: p.status,
-        isEncrypted: p.isEncrypted && !gameState.decryptedCards[0], // Still encrypted if not decrypted
+        isEncrypted: p.isEncrypted && gameState.decryptedCards[0] === null, // Still encrypted if not decrypted (use === null, not !value, since card 0 is valid)
         // Include revealed cards for showdown display
         revealedCards: p.revealedCards,
         cardsRevealed: p.cardsRevealed,
@@ -1102,7 +1102,7 @@ export default function Home() {
             {/* Decrypt My Cards button - shows when current player has encrypted cards AND allowances granted */}
             {/* Button appears for all players once authority grants allowances (detected on-chain) */}
             {/* Also check phase is not Dealing (cards must be dealt first) */}
-            {currentPlayer && currentPlayer.isEncrypted && !gameState.decryptedCards[0] &&
+            {currentPlayer && currentPlayer.isEncrypted && gameState.decryptedCards[0] === null &&
              gameState.areAllowancesGranted &&
              gameState.tableStatus === "Playing" &&
              gameState.phase !== "Settled" && gameState.phase !== "Dealing" && (

@@ -6,9 +6,6 @@ pub mod state;
 
 use anchor_lang::prelude::*;
 
-// MagicBlock Ephemeral Rollups SDK for privacy
-use ephemeral_rollups_sdk::anchor::ephemeral;
-
 pub use constants::*;
 pub use inco_cpi::*;
 pub use instructions::*;
@@ -18,8 +15,7 @@ declare_id!("HS3GdhRBU3jMT4G6ogKVktKaibqsMhPRhDhNsmgzeB8Q");
 
 /// HiddenHand - Privacy Poker on Solana
 /// Using MagicBlock VRF for provably fair shuffling and
-/// Ephemeral Rollups for hidden game state
-#[ephemeral]
+/// Inco FHE for cryptographic card privacy
 #[program]
 pub mod hiddenhand {
     use super::*;
@@ -107,46 +103,6 @@ pub mod hiddenhand {
     /// With Modified Option B, callback_shuffle handles everything atomically.
     pub fn deal_cards_vrf(ctx: Context<DealCardsVrf>) -> Result<()> {
         instructions::deal_cards_vrf::handler(ctx)
-    }
-
-    // ============================================================
-    // MagicBlock Ephemeral Rollup Instructions (Privacy)
-    // ============================================================
-
-    /// Delegate player seat to Ephemeral Rollup for private gameplay
-    /// Enables low-latency transactions and private hole cards
-    pub fn delegate_seat(ctx: Context<DelegateSeat>, seat_index: u8) -> Result<()> {
-        instructions::delegate_seat::handler(ctx, seat_index)
-    }
-
-    /// Delegate hand state to Ephemeral Rollup
-    /// Must be called after start_hand, before gameplay begins
-    pub fn delegate_hand(ctx: Context<DelegateHand>) -> Result<()> {
-        instructions::delegate_hand::handler(ctx)
-    }
-
-    /// Delegate deck state to Ephemeral Rollup
-    /// Must be called after start_hand, before shuffling/dealing
-    pub fn delegate_deck(ctx: Context<DelegateDeck>) -> Result<()> {
-        instructions::delegate_deck::handler(ctx)
-    }
-
-    /// Undelegate player seat back to base layer
-    /// Commits final state (chips) after hand or when leaving
-    pub fn undelegate_seat(ctx: Context<UndelegateSeat>) -> Result<()> {
-        instructions::undelegate_seat::handler(ctx)
-    }
-
-    /// Undelegate hand state back to base layer
-    /// Commits final hand state after showdown
-    pub fn undelegate_hand(ctx: Context<UndelegateHand>) -> Result<()> {
-        instructions::undelegate_hand::handler(ctx)
-    }
-
-    /// Undelegate deck state back to base layer
-    /// Commits final deck state after showdown
-    pub fn undelegate_deck(ctx: Context<UndelegateDeck>) -> Result<()> {
-        instructions::undelegate_deck::handler(ctx)
     }
 
     // ============================================================

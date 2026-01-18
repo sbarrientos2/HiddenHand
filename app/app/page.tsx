@@ -35,12 +35,6 @@ export default function Home() {
     requestShuffle,
     dealCardsVrf,
     setUseVrf,
-    // MagicBlock Delegation
-    delegateSeat,
-    delegateGameState,
-    undelegateSeat,
-    undelegateGameState,
-    setUsePrivacyMode,
     // Inco FHE Encryption
     encryptHoleCards,
     grantCardAllowance,
@@ -69,8 +63,6 @@ export default function Home() {
       pokerGame.grantAllPlayersAllowances = grantAllPlayersAllowances;
       pokerGame.decryptMyCards = decryptMyCards;
       pokerGame.revealCards = revealCards;
-      pokerGame.delegateGameState = delegateGameState;
-      pokerGame.undelegateGameState = undelegateGameState;
       pokerGame.grantOwnAllowance = grantOwnAllowance;
       pokerGame.timeoutReveal = timeoutReveal;
       pokerGame.closeInactiveTable = closeInactiveTable;
@@ -78,7 +70,7 @@ export default function Home() {
       pokerGame.getGameState = () => gameState;
       (window as any).__pokerGame = pokerGame;
     }
-  }, [encryptHoleCards, grantCardAllowance, encryptAndGrantCards, encryptAllPlayersCards, grantAllPlayersAllowances, decryptMyCards, revealCards, delegateGameState, undelegateGameState, grantOwnAllowance, timeoutReveal, closeInactiveTable]);
+  }, [encryptHoleCards, grantCardAllowance, encryptAndGrantCards, encryptAllPlayersCards, grantAllPlayersAllowances, decryptMyCards, revealCards, grantOwnAllowance, timeoutReveal, closeInactiveTable]);
 
   // Transaction toast notifications
   const {
@@ -636,10 +628,10 @@ export default function Home() {
                     {currentPlayer && (gameState.tableStatus === "Waiting" || currentPlayer.chips === 0) && (
                       <button
                         onClick={() => leaveTable()}
-                        disabled={loading || gameState.isUndelegating}
+                        disabled={loading}
                         className="btn-danger px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50"
                       >
-                        {gameState.isUndelegating ? "Undelegating..." : "Leave Table"}
+                        Leave Table
                       </button>
                     )}
 
@@ -668,32 +660,6 @@ export default function Home() {
                       </button>
                     )}
 
-                    {/* Delegation Status */}
-                    {currentPlayer && (
-                      <div className={`flex items-center gap-2 glass-dark px-3 py-1.5 rounded-lg ${
-                        gameState.isGameDelegated ? "border border-emerald-500/30" : ""
-                      }`}>
-                        {gameState.isDelegating ? (
-                          <>
-                            <div className="animate-spin h-3 w-3 border-2 border-emerald-400/30 border-t-emerald-400 rounded-full" />
-                            <span className="text-emerald-400 text-xs">Delegating...</span>
-                          </>
-                        ) : gameState.isGameDelegated ? (
-                          <>
-                            <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                            <span className="text-emerald-400 text-xs font-medium">Private Mode</span>
-                            <svg className="w-3 h-3 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                            </svg>
-                          </>
-                        ) : (
-                          <>
-                            <div className="w-2 h-2 rounded-full bg-gray-500" />
-                            <span className="text-gray-400 text-xs">Public Mode</span>
-                          </>
-                        )}
-                      </div>
-                    )}
 
                     {/* Rebuy message */}
                     {currentPlayer && currentPlayer.chips === 0 && (
@@ -765,26 +731,6 @@ export default function Home() {
                     </button>
                     {gameState.useVrf && (
                       <span className="text-purple-400 text-xs font-medium">Provably Fair</span>
-                    )}
-                  </div>
-
-                  {/* ER Privacy Mode Toggle (MagicBlock) */}
-                  <div className="flex items-center gap-2 glass-dark px-3 py-1.5 rounded-lg">
-                    <span className="text-[var(--text-muted)] text-xs uppercase tracking-wider">ER</span>
-                    <button
-                      onClick={() => setUsePrivacyMode(!gameState.usePrivacyMode)}
-                      className={`relative w-10 h-5 rounded-full transition-colors ${
-                        gameState.usePrivacyMode ? "bg-emerald-500" : "bg-gray-600"
-                      }`}
-                    >
-                      <span
-                        className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
-                          gameState.usePrivacyMode ? "translate-x-5" : ""
-                        }`}
-                      />
-                    </button>
-                    {gameState.usePrivacyMode && (
-                      <span className="text-emerald-400 text-xs font-medium">Fast Mode</span>
                     )}
                   </div>
 
@@ -869,34 +815,8 @@ export default function Home() {
                                   VRF shuffling...
                                 </div>
                               )}
-                              {/* Step 2: Enable Privacy (delegate all game state) */}
-                              {gameState.isDeckShuffled && gameState.usePrivacyMode && !gameState.isGameDelegated && !gameState.isDelegating && (
-                                <button
-                                  onClick={async () => {
-                                    try {
-                                      await delegateGameState();
-                                      addGameEvent("privacy", "Game state delegated to Ephemeral Rollup");
-                                    } catch (e) {
-                                      console.error("Failed to delegate:", e);
-                                    }
-                                  }}
-                                  disabled={loading}
-                                  className="btn-gold px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50 flex items-center gap-2"
-                                >
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                                  </svg>
-                                  Enable Privacy
-                                </button>
-                              )}
-                              {gameState.isDelegating && (
-                                <div className="text-[var(--status-warning)] text-sm flex items-center gap-2">
-                                  <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                                  Delegating to ER...
-                                </div>
-                              )}
-                              {/* Step 3: Deal Cards after shuffle (and after delegation if privacy mode) */}
-                              {gameState.isDeckShuffled && (!gameState.usePrivacyMode || gameState.isGameDelegated) && (
+                              {/* Deal Cards after shuffle */}
+                              {gameState.isDeckShuffled && (
                                 <button
                                   onClick={() => withToast(
                                     () => dealCardsVrf(),
@@ -909,7 +829,7 @@ export default function Home() {
                                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                                   </svg>
-                                  Deal Cards {gameState.isGameDelegated && "(Private)"}
+                                  Deal Cards
                                 </button>
                               )}
                             </>
@@ -1083,33 +1003,6 @@ export default function Home() {
                         </div>
                       )}
                     </>
-                  )}
-
-                  {/* Undelegate after hand is settled (if delegated) */}
-                  {gameState.phase === "Settled" && gameState.pot === 0 && gameState.isGameDelegated && !gameState.isUndelegating && (
-                    <button
-                      onClick={async () => {
-                        try {
-                          await undelegateGameState();
-                          addGameEvent("privacy", "Game state committed back to chain");
-                        } catch (e) {
-                          console.error("Failed to undelegate:", e);
-                        }
-                      }}
-                      disabled={loading}
-                      className="btn-success px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50 flex items-center gap-2"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                      Commit to Chain
-                    </button>
-                  )}
-                  {gameState.isUndelegating && (
-                    <div className="text-[var(--status-warning)] text-sm flex items-center gap-2">
-                      <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                      Committing state...
-                    </div>
                   )}
 
                   {/* Phase indicator */}

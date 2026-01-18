@@ -28,8 +28,7 @@ anchor-lang = { version = "0.32.1", features = ["init-if-needed"] }
 # This avoids version conflicts (inco-lightning needs anchor 0.31.1)
 # See src/inco_cpi.rs for the manual implementation
 
-# MagicBlock SDK for VRF (verifiable randomness) and Ephemeral Rollups (privacy)
-ephemeral-rollups-sdk = { version = "0.6.5", features = ["anchor", "disable-realloc"] }
+# MagicBlock VRF SDK for verifiable randomness (provably fair shuffling)
 ephemeral-vrf-sdk = { version = "0.2.1", features = ["anchor"] }
 constant_time_eq = "=0.3.1"
 

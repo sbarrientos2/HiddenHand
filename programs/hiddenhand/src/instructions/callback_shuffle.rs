@@ -116,6 +116,9 @@ pub fn handler(ctx: Context<CallbackShuffle>, randomness: [u8; 32]) -> Result<()
         }
     }
 
+    // Get program ID for validation
+    let program_id = crate::ID;
+
     // ============================================================
     // SHUFFLE THE DECK IN MEMORY (seed never stored!)
     // ============================================================
@@ -208,12 +211,27 @@ pub fn handler(ctx: Context<CallbackShuffle>, randomness: [u8; 32]) -> Result<()
 
     // Process each seat account
     for account_info in seat_accounts.iter() {
+        // Security check 1: Verify account is owned by our program
+        if account_info.owner != &program_id {
+            continue;
+        }
+
         let data = account_info.try_borrow_data()?;
         if data.len() >= 8 {
             let seat = PlayerSeat::try_deserialize(&mut &data[..])?;
 
-            // Verify this seat belongs to this table
+            // Security check 2: Verify this seat belongs to this table
             if seat.table != table_key {
+                drop(data);
+                continue;
+            }
+
+            // Security check 3: Verify PDA derivation
+            let (expected_pda, _) = Pubkey::find_program_address(
+                &[SEAT_SEED, table_key.as_ref(), &[seat.seat_index]],
+                &program_id,
+            );
+            if *account_info.key != expected_pda {
                 drop(data);
                 continue;
             }

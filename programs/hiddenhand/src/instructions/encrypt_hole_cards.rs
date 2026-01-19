@@ -131,8 +131,11 @@ pub fn handler(ctx: Context<EncryptHoleCards>, _seat_index: u8) -> Result<()> {
 #[derive(Accounts)]
 #[instruction(seat_index: u8)]
 pub struct GrantCardAllowance<'info> {
-    /// The table authority (or any payer for account creation)
-    #[account(mut)]
+    /// The table authority - only authority can grant allowances
+    #[account(
+        mut,
+        constraint = table.authority == authority.key() @ HiddenHandError::UnauthorizedAuthority
+    )]
     pub authority: Signer<'info>,
 
     #[account(

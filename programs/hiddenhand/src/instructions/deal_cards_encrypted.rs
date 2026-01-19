@@ -109,6 +109,10 @@ pub fn handler(ctx: Context<DealCardsEncrypted>) -> Result<()> {
         }
     }
 
+    // Get program ID for validation
+    let program_id = crate::ID;
+    let table_key = table.key();
+
     // Validate phase
     require!(
         hand_state.phase == GamePhase::Dealing,
@@ -232,13 +236,30 @@ pub fn handler(ctx: Context<DealCardsEncrypted>) -> Result<()> {
 
     // Deal to other players via remaining_accounts
     for account_info in ctx.remaining_accounts.iter() {
+        // Security check 1: Verify account is owned by our program
+        if account_info.owner != &program_id {
+            continue;
+        }
+
         let data = account_info.try_borrow_data()?;
         if data.len() >= 8 {
             let seat = PlayerSeat::try_deserialize(&mut &data[..])?;
 
-            if seat.table == table.key() &&
+            // Security check 2: Verify this seat belongs to this table
+            if seat.table == table_key &&
                seat.seat_index != sb_index &&
                seat.seat_index != bb_index {
+
+                // Security check 3: Verify PDA derivation
+                let (expected_pda, _) = Pubkey::find_program_address(
+                    &[SEAT_SEED, table_key.as_ref(), &[seat.seat_index]],
+                    &program_id,
+                );
+                if *account_info.key != expected_pda {
+                    drop(data);
+                    continue;
+                }
+
                 let seat_index = seat.seat_index;
                 let has_chips = seat.chips > 0;
                 drop(data);

@@ -76,6 +76,7 @@ pub fn handler(ctx: Context<CloseInactiveTable>) -> Result<()> {
 
     let table_key = table.key();
     let _vault_seeds: &[&[u8]] = &[VAULT_SEED, table_key.as_ref(), &[ctx.bumps.vault]];
+    let program_id = crate::ID;
 
     let mut total_returned: u64 = 0;
 
@@ -83,14 +84,30 @@ pub fn handler(ctx: Context<CloseInactiveTable>) -> Result<()> {
         let seat_info = &chunk[0];
         let wallet_info = &chunk[1];
 
+        // Security check 1: Verify seat account is owned by our program
+        if seat_info.owner != &program_id {
+            continue;
+        }
+
         // Deserialize the seat
         let seat_data = seat_info.try_borrow_data()?;
         if seat_data.len() >= 8 {
             // Check discriminator and deserialize
             let seat = PlayerSeat::try_deserialize(&mut &seat_data[..])?;
 
-            // Verify seat belongs to this table
-            if seat.table != table.key() {
+            // Security check 2: Verify seat belongs to this table
+            if seat.table != table_key {
+                drop(seat_data);
+                continue;
+            }
+
+            // Security check 3: Verify PDA derivation
+            let (expected_pda, _) = Pubkey::find_program_address(
+                &[SEAT_SEED, table_key.as_ref(), &[seat.seat_index]],
+                &program_id,
+            );
+            if *seat_info.key != expected_pda {
+                drop(seat_data);
                 continue;
             }
 
@@ -102,6 +119,7 @@ pub fn handler(ctx: Context<CloseInactiveTable>) -> Result<()> {
                     seat.player,
                     wallet_info.key
                 );
+                drop(seat_data);
                 continue;
             }
 
@@ -125,14 +143,23 @@ pub fn handler(ctx: Context<CloseInactiveTable>) -> Result<()> {
         }
         drop(seat_data);
 
-        // Clear the seat
+        // Clear the seat (re-validate ownership and PDA)
+        if seat_info.owner != &program_id {
+            continue;
+        }
         let mut seat_data = seat_info.try_borrow_mut_data()?;
         if seat_data.len() >= 8 {
             let mut seat = PlayerSeat::try_deserialize(&mut &seat_data[..])?;
-            if seat.table == table.key() {
-                seat.chips = 0;
-                seat.player = Pubkey::default();
-                seat.try_serialize(&mut *seat_data)?;
+            if seat.table == table_key {
+                let (expected_pda, _) = Pubkey::find_program_address(
+                    &[SEAT_SEED, table_key.as_ref(), &[seat.seat_index]],
+                    &program_id,
+                );
+                if *seat_info.key == expected_pda {
+                    seat.chips = 0;
+                    seat.player = Pubkey::default();
+                    seat.try_serialize(&mut *seat_data)?;
+                }
             }
         }
     }

@@ -5,6 +5,44 @@ use crate::constants::*;
 use crate::error::HiddenHandError;
 use crate::state::{evaluate_hand, find_winners, GamePhase, HandState, PlayerSeat, PlayerStatus, Table, TableStatus};
 
+/// Helper to validate a seat account from remaining_accounts
+/// Returns Some(seat) if valid, None if should be skipped
+fn validate_seat_account(
+    account_info: &AccountInfo,
+    table_key: &Pubkey,
+    program_id: &Pubkey,
+) -> Option<PlayerSeat> {
+    // Security check 1: Verify account is owned by our program
+    if account_info.owner != program_id {
+        return None;
+    }
+
+    // Try to borrow and deserialize
+    let data = account_info.try_borrow_data().ok()?;
+    if data.len() < 8 {
+        return None;
+    }
+
+    // Try to deserialize as PlayerSeat
+    let seat = PlayerSeat::try_deserialize(&mut &data[..]).ok()?;
+
+    // Security check 2: Verify table matches
+    if seat.table != *table_key {
+        return None;
+    }
+
+    // Security check 3: Verify PDA derivation
+    let (expected_pda, _) = Pubkey::find_program_address(
+        &[SEAT_SEED, table_key.as_ref(), &[seat.seat_index]],
+        program_id,
+    );
+    if *account_info.key != expected_pda {
+        return None;
+    }
+
+    Some(seat)
+}
+
 #[derive(Accounts)]
 pub struct Showdown<'info> {
     /// Anyone can call showdown, but non-authority must wait for timeout
@@ -85,18 +123,14 @@ pub fn handler(ctx: Context<Showdown>) -> Result<()> {
     // Collect player seats from remaining accounts
     // Store seat index and account index for later updates
     let mut active_seats: Vec<(u8, usize)> = Vec::new();
+    let program_id = crate::ID;
 
     for (idx, account_info) in ctx.remaining_accounts.iter().enumerate() {
-        // Deserialize as PlayerSeat - skip invalid accounts gracefully
-        let data = account_info.try_borrow_data()?;
-        if data.len() >= 8 {
-            // Try to deserialize - skip if invalid (closed account, wrong type, etc.)
-            if let Ok(seat) = PlayerSeat::try_deserialize(&mut &data[..]) {
-                // Only include active players (not folded)
-                if seat.table == table.key() &&
-                   (seat.status == PlayerStatus::Playing || seat.status == PlayerStatus::AllIn) {
-                    active_seats.push((seat.seat_index, idx));
-                }
+        // Validate seat account (owner check + PDA verification)
+        if let Some(seat) = validate_seat_account(account_info, &table.key(), &program_id) {
+            // Only include active players (not folded)
+            if seat.status == PlayerStatus::Playing || seat.status == PlayerStatus::AllIn {
+                active_seats.push((seat.seat_index, idx));
             }
         }
     }
@@ -266,26 +300,21 @@ pub fn handler(ctx: Context<Showdown>) -> Result<()> {
 
     // Reset all player states for next hand (including folded players)
     for account_info in ctx.remaining_accounts.iter() {
-        let data = account_info.try_borrow_data()?;
-        if data.len() >= 8 {
-            // Try to deserialize - skip if invalid
-            if let Ok(seat) = PlayerSeat::try_deserialize(&mut &data[..]) {
-                if seat.table == table.key() {
-                    drop(data);
-                    let mut data = account_info.try_borrow_mut_data()?;
-                    if let Ok(mut seat) = PlayerSeat::try_deserialize(&mut &data[..]) {
-                        seat.status = PlayerStatus::Sitting;
-                        seat.current_bet = 0;
-                        seat.total_bet_this_hand = 0;
-                        seat.hole_card_1 = 255; // Sentinel: not dealt
-                        seat.hole_card_2 = 255; // Sentinel: not dealt
-                        seat.revealed_card_1 = 255; // Not revealed
-                        seat.revealed_card_2 = 255; // Not revealed
-                        seat.cards_revealed = false;
-                        seat.has_acted = false;
-                        seat.try_serialize(&mut *data)?;
-                    }
-                }
+        // Validate seat account (owner check + PDA verification)
+        if let Some(_seat) = validate_seat_account(account_info, &table.key(), &program_id) {
+            // Reset the seat state
+            let mut data = account_info.try_borrow_mut_data()?;
+            if let Ok(mut seat) = PlayerSeat::try_deserialize(&mut &data[..]) {
+                seat.status = PlayerStatus::Sitting;
+                seat.current_bet = 0;
+                seat.total_bet_this_hand = 0;
+                seat.hole_card_1 = 255; // Sentinel: not dealt
+                seat.hole_card_2 = 255; // Sentinel: not dealt
+                seat.revealed_card_1 = 255; // Not revealed
+                seat.revealed_card_2 = 255; // Not revealed
+                seat.cards_revealed = false;
+                seat.has_acted = false;
+                seat.try_serialize(&mut *data)?;
             }
         }
     }

@@ -115,11 +115,12 @@ fn verify_ed25519_signature(
     // - 2 bytes: message_data_offset
     // - 2 bytes: message_data_size
     // - 2 bytes: message_instruction_index
-    // Then the actual data: signature (64 bytes), pubkey (32 bytes), message (32 bytes for hash)
+    // Then the actual data: pubkey (32 bytes), signature (64 bytes), message (32 bytes for hash)
+    // NOTE: Ed25519Program.createInstructionWithPublicKey puts pubkey BEFORE signature!
 
     let data = &ed25519_ix.data;
-    if data.len() < 16 + 64 + 32 + 32 {
-        msg!("Ed25519 instruction data too short");
+    if data.len() < 144 {
+        msg!("Ed25519 instruction data too short: {} < 144", data.len());
         return Ok(false);
     }
 
@@ -131,11 +132,13 @@ fn verify_ed25519_signature(
         return Ok(false);
     }
 
-    // For data embedded in the same instruction:
-    // signature at offset 16, pubkey at 16+64=80, message at 16+64+32=112
-    let signature_offset = 16usize;
-    let pubkey_offset = signature_offset + 64;
-    let message_offset = pubkey_offset + 32;
+    // Correct layout for Ed25519Program.createInstructionWithPublicKey:
+    // - Header: bytes 0-15 (16 bytes)
+    // - Public key: bytes 16-47 (32 bytes)
+    // - Signature: bytes 48-111 (64 bytes)
+    // - Message hash: bytes 112-143 (32 bytes)
+    let pubkey_offset = 16usize;
+    let message_offset = 112usize;
 
     // Verify public key is Inco covalidator
     let pubkey = &data[pubkey_offset..pubkey_offset + 32];
@@ -235,12 +238,16 @@ pub fn handler(ctx: Context<RevealCards>, card1: u8, card2: u8) -> Result<()> {
         false
     };
 
-    // For now, allow reveal even without verification (for testing)
-    // In production, require both verifications
-    if !verified1 || !verified2 {
-        msg!("WARNING: Ed25519 verification incomplete (v1={}, v2={})", verified1, verified2);
-        msg!("Allowing reveal for testing - production should require verification");
-    }
+    // SECURITY: Require Ed25519 verification for both cards
+    // The covalidator signature proves that:
+    // 1. The plaintext value came from Inco's TEE decryption
+    // 2. The plaintext corresponds to the encrypted handle stored on-chain
+    // Without this check, players could claim any card values at showdown
+    require!(
+        verified1 && verified2,
+        HiddenHandError::Ed25519VerificationFailed
+    );
+    msg!("Ed25519 verification passed for both cards");
 
     // Store revealed cards
     player_seat.revealed_card_1 = card1;
@@ -258,13 +265,20 @@ pub fn handler(ctx: Context<RevealCards>, card1: u8, card2: u8) -> Result<()> {
 }
 
 /// Helper to verify Ed25519 signature data for a specific handle/plaintext pair
+///
+/// Ed25519 instruction data layout (from Ed25519Program.createInstructionWithPublicKey):
+/// - Bytes 0-15: Header (num_sigs, offsets, etc.)
+/// - Bytes 16-47: Public key (32 bytes)
+/// - Bytes 48-111: Signature (64 bytes)
+/// - Bytes 112-143: Message hash (32 bytes)
 fn verify_ed25519_for_handle(data: &[u8], handle: u128, plaintext: u8) -> Result<bool> {
-    if data.len() < 16 + 64 + 32 + 32 {
+    // Expected size: 16 (header) + 32 (pubkey) + 64 (sig) + 32 (msg) = 144
+    if data.len() < 144 {
         return Ok(false);
     }
 
-    // Extract public key (at offset 80 in standard layout)
-    let pubkey_offset = 16 + 64;
+    // Public key is at offset 16 (right after the 16-byte header)
+    let pubkey_offset = 16;
     let pubkey = &data[pubkey_offset..pubkey_offset + 32];
 
     // Verify it's the Inco covalidator
@@ -272,8 +286,8 @@ fn verify_ed25519_for_handle(data: &[u8], handle: u128, plaintext: u8) -> Result
         return Ok(false);
     }
 
-    // Verify message hash
-    let message_offset = pubkey_offset + 32;
+    // Message hash is at offset 112 (after header + pubkey + signature)
+    let message_offset = 112;
     let expected_hash = create_inco_message_hash(handle, plaintext);
     let actual_hash = &data[message_offset..message_offset + 32];
 

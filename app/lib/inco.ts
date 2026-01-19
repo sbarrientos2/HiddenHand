@@ -83,6 +83,18 @@ export interface WalletSigner {
 }
 
 /**
+ * Result from decrypting cards with attestation data
+ */
+export interface DecryptedCardsResult {
+  /** Decrypted card values (0-51) */
+  plaintexts: number[];
+  /** Ed25519 verification instructions for on-chain verification */
+  ed25519Instructions: import("@solana/web3.js").TransactionInstruction[];
+  /** Raw signatures from covalidator (base58 encoded) */
+  signatures: string[];
+}
+
+/**
  * Convert a BigInt handle to string format for Inco SDK
  * The SDK internally does BigInt(handle), so we pass decimal strings
  */
@@ -104,6 +116,24 @@ export async function decryptCards(
   handles: bigint[],
   wallet: WalletSigner
 ): Promise<number[]> {
+  const result = await decryptCardsWithAttestation(handles, wallet);
+  return result.plaintexts;
+}
+
+/**
+ * Decrypt encrypted card handles with full attestation data
+ *
+ * Returns Ed25519 verification instructions for on-chain verification.
+ * Use this when you need to prove the decrypted values on-chain (e.g., for showdown).
+ *
+ * @param handles - Array of encrypted u128 handles (as bigints)
+ * @param wallet - Wallet with publicKey and signMessage
+ * @returns DecryptedCardsResult with plaintexts and Ed25519 instructions
+ */
+export async function decryptCardsWithAttestation(
+  handles: bigint[],
+  wallet: WalletSigner
+): Promise<DecryptedCardsResult> {
   // Dynamic import to avoid SSR issues
   const { decrypt } = await import("@inco/solana-sdk");
 
@@ -128,7 +158,11 @@ export async function decryptCards(
       return value;
     });
 
-    return plaintexts;
+    return {
+      plaintexts,
+      ed25519Instructions: result.ed25519Instructions || [],
+      signatures: result.signatures || [],
+    };
   } catch (error) {
     console.error("Inco decryption failed:", error);
     throw new Error(

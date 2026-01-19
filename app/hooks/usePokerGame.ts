@@ -43,7 +43,8 @@ import {
   getOccupiedSeats,
   parseAnchorError,
 } from "@/lib/utils";
-import { decryptCards } from "@/lib/inco";
+import { decryptCardsWithAttestation } from "@/lib/inco";
+import { TransactionInstruction, Transaction } from "@solana/web3.js";
 
 // Types matching the IDL
 export interface TableAccount {
@@ -158,6 +159,8 @@ export interface GameState {
   decryptedCards: [number | null, number | null]; // Client-side decrypted cards
   isRevealing: boolean; // Card reveal in progress (for showdown)
   encryptionHandNumber: number | null; // Hand number when encryption was detected (prevents cross-hand leakage)
+  // Ed25519 attestation for card reveal verification
+  ed25519Instructions: TransactionInstruction[]; // Stored from decryption for reveal verification
 }
 
 export interface UsePokerGameResult {
@@ -251,6 +254,7 @@ const initialGameState: GameState = {
   decryptedCards: [null, null],
   isRevealing: false,
   encryptionHandNumber: null, // Track which hand encryption belongs to
+  ed25519Instructions: [], // Ed25519 verification instructions for card reveal
 };
 
 export function usePokerGame(): UsePokerGameResult {
@@ -557,6 +561,8 @@ export function usePokerGame(): UsePokerGameResult {
         decryptedCards: resetEncryptionState ? [null, null] : prev.decryptedCards,
         // Track which hand the encryption state belongs to (for cross-hand leak prevention)
         encryptionHandNumber: resetEncryptionState ? null : (detectedCardsEncrypted ? currentHandNumber : prev.encryptionHandNumber),
+        // Clear Ed25519 attestation instructions when hand changes (they're handle-specific)
+        ed25519Instructions: resetEncryptionState ? [] : prev.ed25519Instructions,
       }));
 
       setError(null);
@@ -742,6 +748,7 @@ export function usePokerGame(): UsePokerGameResult {
       isDecrypting: false,
       decryptedCards: [null, null],
       encryptionHandNumber: null,
+      ed25519Instructions: [], // Clear attestation instructions from previous hand
     }));
 
     try {
@@ -1267,6 +1274,7 @@ export function usePokerGame(): UsePokerGameResult {
   // ============================================================
   // Inco FHE: Decrypt own cards (client-side)
   // Uses Inco SDK to decrypt encrypted handles with wallet signing
+  // Also stores Ed25519 attestation instructions for on-chain verification
   // ============================================================
   const decryptMyCards = useCallback(async (): Promise<void> => {
     if (!program || !publicKey || !signMessage || !gameState.tablePDA || gameState.currentPlayerSeat === null) {
@@ -1293,28 +1301,29 @@ export function usePokerGame(): UsePokerGameResult {
       }
 
       console.log("Encrypted handles:", handle1.toString(), handle2.toString());
-      console.log("Calling Inco SDK to decrypt...");
+      console.log("Calling Inco SDK to decrypt with attestation...");
 
-      // Call Inco SDK to decrypt (requires wallet signature for authentication)
-      const plaintexts = await decryptCards(
+      // Call Inco SDK to decrypt with attestation (includes Ed25519 verification instructions)
+      const result = await decryptCardsWithAttestation(
         [handle1, handle2],
         { publicKey, signMessage }
       );
 
       // Validate we got both cards
-      if (plaintexts.length < 2) {
-        console.error(`Expected 2 decrypted cards, got ${plaintexts.length}`);
+      if (result.plaintexts.length < 2) {
+        console.error(`Expected 2 decrypted cards, got ${result.plaintexts.length}`);
       }
 
       // Use null for missing cards (defensive coding)
-      const card1 = plaintexts[0] ?? null;
-      const card2 = plaintexts[1] ?? null;
+      const card1 = result.plaintexts[0] ?? null;
+      const card2 = result.plaintexts[1] ?? null;
 
-      // Update state with decrypted cards
+      // Update state with decrypted cards AND Ed25519 instructions for later reveal
       setGameState((prev) => ({
         ...prev,
         isDecrypting: false,
         decryptedCards: [card1, card2],
+        ed25519Instructions: result.ed25519Instructions,
       }));
 
       console.log("Cards decrypted successfully:", card1, card2);
@@ -1326,8 +1335,8 @@ export function usePokerGame(): UsePokerGameResult {
   }, [program, publicKey, signMessage, gameState.tablePDA, gameState.currentPlayerSeat]);
 
   // Reveal cards for showdown (submits decrypted cards to blockchain)
-  // Note: Full Ed25519 verification from Inco is implemented in the program,
-  // but we allow reveal without verification for testing
+  // IMPORTANT: Includes Ed25519 verification instructions from Inco attestation
+  // The program verifies that Inco's covalidator signed the (handle, plaintext) pairs
   const revealCards = useCallback(async (): Promise<string> => {
     if (!program || !provider || !publicKey || !gameState.tablePDA || !gameState.table || gameState.currentPlayerSeat === null) {
       throw new Error("Not ready to reveal - wallet not connected or not at table");
@@ -1339,7 +1348,14 @@ export function usePokerGame(): UsePokerGameResult {
       throw new Error("Must decrypt cards before revealing");
     }
 
+    // Check if we have Ed25519 attestation instructions
+    const ed25519Ixs = gameState.ed25519Instructions;
+    if (ed25519Ixs.length < 2) {
+      console.warn(`Expected 2 Ed25519 instructions, got ${ed25519Ixs.length}. Verification may fail.`);
+    }
+
     console.log("Revealing cards for showdown:", card1, card2);
+    console.log(`Including ${ed25519Ixs.length} Ed25519 verification instruction(s)`);
     setGameState((prev) => ({ ...prev, isRevealing: true }));
 
     try {
@@ -1347,10 +1363,8 @@ export function usePokerGame(): UsePokerGameResult {
       const [seatPDA] = getSeatPDA(gameState.tablePDA, gameState.currentPlayerSeat);
       const [handPDA] = getHandPDA(gameState.tablePDA, handNumber);
 
-      // Call reveal_cards instruction
-      // Note: In production, this should include Ed25519 verification instructions
-      // For now, the program allows reveal without verification for testing
-      const tx = await program.methods
+      // Build reveal_cards instruction (not sent yet)
+      const revealIx = await program.methods
         .revealCards(card1, card2)
         .accounts({
           player: publicKey,
@@ -1359,19 +1373,49 @@ export function usePokerGame(): UsePokerGameResult {
           playerSeat: seatPDA,
           instructionsSysvar: new PublicKey("Sysvar1nstructions1111111111111111111111111"),
         })
-        .rpc();
+        .instruction();
 
-      console.log("Cards revealed on-chain:", tx);
+      // Build transaction with Ed25519 instructions FIRST, then reveal_cards
+      // Order matters: Ed25519 instructions at indices 0 and 1, reveal_cards at index 2
+      // Program expects: card1 verification at (current_ix_index - 2), card2 at (current_ix_index - 1)
+      const tx = new Transaction();
+
+      // Add Ed25519 verification instructions first
+      // These are pre-verified by Solana runtime before our program runs
+      for (const ed25519Ix of ed25519Ixs) {
+        tx.add(ed25519Ix);
+      }
+
+      // Add reveal_cards instruction last
+      tx.add(revealIx);
+
+      // Get latest blockhash and send
+      const { blockhash, lastValidBlockHeight } = await provider.connection.getLatestBlockhash();
+      tx.recentBlockhash = blockhash;
+      tx.feePayer = publicKey;
+
+      // Sign and send
+      const signedTx = await provider.wallet.signTransaction(tx);
+      const signature = await provider.connection.sendRawTransaction(signedTx.serialize());
+
+      // Wait for confirmation
+      await provider.connection.confirmTransaction({
+        signature,
+        blockhash,
+        lastValidBlockHeight,
+      }, "confirmed");
+
+      console.log("Cards revealed on-chain with Ed25519 verification:", signature);
       setGameState((prev) => ({ ...prev, isRevealing: false }));
 
       // State will be refreshed by polling
-      return tx;
+      return signature;
     } catch (e) {
       console.error("Failed to reveal cards:", e);
       setGameState((prev) => ({ ...prev, isRevealing: false }));
       throw e;
     }
-  }, [program, provider, publicKey, gameState.tablePDA, gameState.table, gameState.currentPlayerSeat, gameState.decryptedCards]);
+  }, [program, provider, publicKey, gameState.tablePDA, gameState.table, gameState.currentPlayerSeat, gameState.decryptedCards, gameState.ed25519Instructions]);
 
   // ============================================================
   // Game Liveness: Self-grant allowance after timeout

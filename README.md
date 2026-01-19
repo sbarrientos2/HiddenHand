@@ -27,10 +27,13 @@ HiddenHand is the first poker game where **no one can see your cards. Not even u
 
 - **Provably Fair Shuffling** - MagicBlock VRF provides verifiable randomness
 - **Encrypted Hole Cards** - Inco Lightning FHE encryption (cards encrypted as u128 handles)
+- **Ed25519 Verified Reveals** - Covalidator signatures prove card authenticity at showdown
 - **Full Texas Hold'em** - PreFlop, Flop, Turn, River, Showdown
 - **Multi-round Gameplay** - Play consecutive hands with persistent chip stacks
 - **Timeout Protection** - Players can't stall the game indefinitely
+- **Abandoned Table Recovery** - Anyone can close inactive tables and return funds
 - **Client-side Decryption** - Only you can see your cards via wallet signing
+- **42 Unit Tests** - Comprehensive test coverage for hand evaluation and game logic
 
 ## How It Works
 
@@ -41,8 +44,12 @@ HiddenHand is the first poker game where **no one can see your cards. Not even u
 4. Grant Access   → Authority grants decryption allowances to players
 5. Decrypt Cards  → Players decrypt their own cards client-side via Inco SDK
 6. Play Poker     → Standard betting rounds (Fold/Check/Call/Raise/All-In)
-7. Showdown       → Reveal cards, evaluate hands, distribute pot
+7. Showdown       → Ed25519-verified card reveals, evaluate hands, distribute pot
 ```
+
+### Security at Showdown
+
+When revealing cards, players must provide Ed25519 signatures from Inco covalidators. This cryptographically proves that the revealed card values match the encrypted handles stored on-chain. Without valid signatures, players cannot claim arbitrary card values.
 
 ### Privacy Architecture
 
@@ -69,7 +76,7 @@ HiddenHand is the first poker game where **no one can see your cards. Not even u
 | Blockchain | Solana Devnet |
 | Randomness | MagicBlock VRF (`ephemeral-vrf-sdk`) |
 | Encryption | Inco Lightning FHE |
-| Frontend | Next.js 16 / TypeScript |
+| Frontend | Next.js 15 / TypeScript |
 | Wallet | Solana Wallet Adapter |
 
 ## Program IDs
@@ -133,15 +140,20 @@ Open [http://localhost:3000](http://localhost:3000) and connect your wallet.
 HiddenHand/
 ├── programs/
 │   └── hiddenhand/src/
-│       ├── lib.rs              # Program entry point
+│       ├── lib.rs              # Program entry point (18 instructions)
 │       ├── instructions/       # All instruction handlers
 │       │   ├── create_table.rs
 │       │   ├── join_table.rs
 │       │   ├── start_hand.rs
 │       │   ├── request_shuffle.rs
-│       │   ├── callback_shuffle.rs  # VRF + encrypt atomic
+│       │   ├── callback_shuffle.rs    # VRF callback
+│       │   ├── deal_cards_encrypted.rs # VRF + Inco encryption
 │       │   ├── player_action.rs
 │       │   ├── showdown.rs
+│       │   ├── reveal_cards.rs        # Ed25519 verified reveals
+│       │   ├── timeout_player.rs      # Timeout handling
+│       │   ├── timeout_reveal.rs
+│       │   ├── close_inactive_table.rs
 │       │   └── ...
 │       ├── state/              # Account structures
 │       │   ├── table.rs
@@ -150,15 +162,16 @@ HiddenHand/
 │       │   ├── deck.rs
 │       │   └── hand_eval.rs    # Poker hand evaluation
 │       ├── inco_cpi.rs         # Inco FHE integration
-│       └── error.rs
+│       └── error.rs            # 30+ custom errors
 ├── app/                        # Next.js frontend
 │   ├── app/page.tsx           # Main game UI
+│   ├── components/            # UI components
 │   ├── hooks/
 │   │   ├── usePokerGame.ts    # Game logic hook
 │   │   └── usePokerProgram.ts # Anchor program hook
 │   └── lib/
-│       ├── inco.ts            # Inco SDK wrapper
-│       └── magicblock.ts      # VRF utilities
+│       ├── inco.ts            # Inco SDK wrapper + Ed25519 signing
+│       └── idl/               # Program IDL
 ├── tests/
 │   └── hiddenhand.ts          # Integration tests
 └── marketing/                  # Pitch materials
@@ -203,16 +216,19 @@ Full Texas Hold'em hand rankings implemented on-chain:
 - [x] Open-source code
 - [x] Deployed to Solana devnet
 - [x] Documentation (this README)
+- [x] 42 unit tests passing
+- [x] Ed25519 signature verification for secure card reveals
 - [ ] 3-minute demo video
 
 ## Future Improvements
 
 - [ ] Multi-table tournaments
-- [ ] Side pots for all-in scenarios
+- [x] Side pots for all-in scenarios (implemented)
 - [ ] Spectator mode
 - [ ] Chat functionality
-- [ ] Mobile-responsive design improvements
+- [x] Mobile-responsive design
 - [ ] Mainnet deployment
+- [ ] Tournament mode with blind escalation
 
 ## Team
 

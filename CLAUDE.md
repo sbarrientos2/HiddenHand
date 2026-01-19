@@ -28,21 +28,23 @@ This project was started for the **Solana Privacy Hack** hackathon (Jan 12-30, 2
 - Player join/leave with SOL buy-in
 - Betting logic (Fold/Check/Call/Raise/AllIn)
 - Pot management and action rotation
-- Card encoding (0-51) ready for encryption
+- Card encoding (0-51) with Inco FHE encryption
 - **Hand evaluation algorithm** (best 5 from 7 cards)
 - **Showdown with pot distribution** (handles split pots)
-- **36 passing unit tests**
+- **42 passing unit tests**
 - **MagicBlock VRF Integration** - Provably fair card shuffling
-- **MagicBlock ER Delegation** - Private hole cards via Ephemeral Rollups
-- **mb-test program** - Learning/testing program for MagicBlock SDK
+- **Inco FHE Encryption** - Hole cards encrypted as u128 handles
+- **Ed25519 Signature Verification** - Secure card reveals at showdown
+- **Complete Next.js Frontend** - Playable poker UI with wallet integration
+- **Client-side Decryption** - Players decrypt their own cards via Inco SDK
 
 ### What's Next
 1. ~~Write tests for current poker logic~~ Done
 2. ~~Integrate MagicBlock VRF for shuffling~~ Done
-3. ~~Integrate MagicBlock ER for privacy~~ Done
-4. Start Next.js frontend with game UI
-5. Deploy to MagicBlock DevNet and test VRF/ER features
-6. Demo and submit
+3. ~~Integrate Inco FHE for card encryption~~ Done
+4. ~~Build Next.js frontend with game UI~~ Done
+5. ~~Ed25519 signature verification for secure reveals~~ Done
+6. Record demo video and submit
 
 ---
 
@@ -61,17 +63,22 @@ HiddenHand is a fully on-chain Texas Hold'em poker game with cryptographic priva
 - **Network**: Solana Devnet
 - **Program ID**: `HS3GdhRBU3jMT4G6ogKVktKaibqsMhPRhDhNsmgzeB8Q`
 
-### MagicBlock Integration (ACTIVE)
+### MagicBlock VRF Integration
 - **VRF SDK**: `ephemeral-vrf-sdk = "0.2.1"` - Verifiable random function
-- **ER SDK**: `ephemeral-rollups-sdk = "0.6.5"` - Ephemeral Rollups for privacy
 - **VRF Features**: Provably fair shuffling, callback-based randomness
-- **ER Features**: Account delegation, private state, 10ms latency
-- **Status**: Integrated and compiling (36 tests passing)
+- **Status**: Integrated and working (42 tests passing)
 
-### Frontend (Next.js) - Planned
+### Inco FHE Integration
+- **Inco Lightning**: TEE-based FHE encryption for hole cards
+- **Encryption**: Cards stored as u128 handles on-chain
+- **Decryption**: Client-side via Inco SDK with wallet signing
+- **Ed25519 Verification**: Covalidator signatures verify card reveals at showdown
+
+### Frontend (Next.js)
 - **Location**: `/app/`
-- **Framework**: Next.js with TypeScript
+- **Framework**: Next.js 15 with TypeScript
 - **Wallet**: Solana Wallet Adapter
+- **Status**: Complete and playable
 
 ## Game Architecture
 
@@ -79,7 +86,7 @@ HiddenHand is a fully on-chain Texas Hold'em poker game with cryptographic priva
 - Cards encoded as 0-51 (u8)
 - Suit: card / 13 (0=Hearts, 1=Diamonds, 2=Clubs, 3=Spades)
 - Rank: card % 13 (0=2, 1=3, ..., 8=10, 9=J, 10=Q, 11=K, 12=A)
-- Will be stored as encrypted `Euint128` handles when Inco is integrated
+- Stored as encrypted `u128` handles via Inco FHE
 
 ### Game Phases
 ```
@@ -93,7 +100,9 @@ Dealing → PreFlop → Flop → Turn → River → Showdown → Settled
 - **Deck State**: `["deck", table_pubkey, hand_number]`
 - **Vault**: `["vault", table_pubkey]`
 
-## Current Instructions
+## Current Instructions (18 total)
+
+### Core Game Instructions
 
 | Instruction | Description | Status |
 |-------------|-------------|--------|
@@ -102,11 +111,10 @@ Dealing → PreFlop → Flop → Turn → River → Showdown → Settled
 | `leave_table` | Cash out and leave | Done |
 | `start_hand` | Begin new hand, init deck | Done |
 | `player_action` | Fold/Check/Call/Raise/AllIn | Done |
-| `deal_cards` | Shuffle deck, deal hole cards, post blinds | Done (legacy) |
 | `showdown` | Evaluate hands, determine winner, distribute pot | Done |
-| `reveal_community` | Reveal flop/turn/river | Auto (in player_action) |
+| `deal_cards` | Legacy shuffle for local testing | Done |
 
-### MagicBlock VRF Instructions (Provably Fair)
+### MagicBlock VRF Instructions (Provably Fair Shuffling)
 
 | Instruction | Description | Status |
 |-------------|-------------|--------|
@@ -114,68 +122,70 @@ Dealing → PreFlop → Flop → Turn → River → Showdown → Settled
 | `callback_shuffle` | VRF callback - shuffles deck with randomness | Done |
 | `deal_cards_vrf` | Deal hole cards after VRF shuffle | Done |
 
-### MagicBlock ER Instructions (Privacy)
+### Inco FHE Instructions (Encrypted Cards)
 
 | Instruction | Description | Status |
 |-------------|-------------|--------|
-| `delegate_seat` | Delegate player seat to Ephemeral Rollup | Done |
-| `delegate_hand` | Delegate hand state to ER | Done |
-| `delegate_deck` | Delegate deck state to ER | Done |
-| `undelegate_seat` | Commit state back to base layer | Done |
-| `undelegate_hand` | Commit hand state back | Done |
-| `undelegate_deck` | Commit deck state back | Done |
+| `deal_cards_encrypted` | Shuffle + encrypt cards via Inco FHE | Done |
+| `encrypt_hole_cards` | Encrypt dealt cards for a player | Done |
+| `grant_card_allowance` | Authority grants decryption allowance | Done |
+| `grant_own_allowance` | Player grants own allowance via signing | Done |
+| `reveal_cards` | Reveal cards at showdown (Ed25519 verified) | Done |
 
-### Inco FHE Instructions (Cryptographic Privacy - Phase 2)
+### Timeout & Recovery Instructions
 
 | Instruction | Description | Status |
 |-------------|-------------|--------|
-| `encrypt_hole_cards` | Encrypt cards via Inco FHE after ER commit | Done |
-| `reveal_community` | Grant allowances for community cards | TODO |
+| `timeout_player` | Force fold inactive player | Done |
+| `timeout_reveal` | Force reveal timeout at showdown | Done |
+| `close_inactive_table` | Close abandoned table, return funds | Done |
 
 ## File Structure
 
 ```
 hiddenhand/
 ├── programs/
-│   ├── hiddenhand/src/           # Main poker program
-│   │   ├── lib.rs                # Program entry (18 instructions)
-│   │   ├── constants.rs          # PDA seeds, game constants
-│   │   ├── error.rs              # 27+ custom errors
-│   │   ├── inco_cpi.rs           # Manual Inco CPI (no SDK)
-│   │   ├── state/
-│   │   │   ├── table.rs          # Table config, seat management
-│   │   │   ├── hand.rs           # Hand phases, pot, betting round
-│   │   │   ├── player.rs         # Player seat, chips, hole cards (u128 handles)
-│   │   │   ├── deck.rs           # Deck state, card utilities
-│   │   │   └── hand_eval.rs      # Hand evaluation (best 5 from 7)
-│   │   └── instructions/
-│   │       ├── create_table.rs
-│   │       ├── join_table.rs
-│   │       ├── leave_table.rs
-│   │       ├── start_hand.rs
-│   │       ├── player_action.rs
-│   │       ├── deal_cards.rs         # Legacy shuffle (local testing)
-│   │       ├── showdown.rs           # Winner determination
-│   │       ├── timeout_player.rs     # Force fold inactive players
-│   │       ├── request_shuffle.rs    # VRF randomness request
-│   │       ├── callback_shuffle.rs   # VRF callback, stores seed
-│   │       ├── deal_cards_vrf.rs     # Shuffle on ER + deal cards
-│   │       ├── delegate_seat.rs      # ER delegation
-│   │       ├── delegate_hand.rs      # ER delegation
-│   │       ├── delegate_deck.rs      # ER delegation
-│   │       ├── undelegate_*.rs       # ER undelegation
-│   │       └── encrypt_hole_cards.rs # Inco FHE encryption (Phase 2)
-│   ├── mb-test/src/              # MagicBlock learning program
-│   └── inco-er-test/src/         # Inco CPI test program
-├── marketing/
-│   ├── PITCH.md
-│   ├── TAGLINES.md
-│   ├── MAGICBLOCK_BENEFITS.md    # Why MagicBlock for poker
-│   └── MAGICBLOCK_DEEP_DIVE.md   # Technical integration guide
-├── app/                          # Frontend (in progress)
+│   └── hiddenhand/src/           # Main poker program
+│       ├── lib.rs                # Program entry (18 instructions)
+│       ├── constants.rs          # PDA seeds, game constants
+│       ├── error.rs              # 30+ custom errors
+│       ├── inco_cpi.rs           # Manual Inco CPI (no SDK)
+│       ├── state/
+│       │   ├── table.rs          # Table config, seat management
+│       │   ├── hand.rs           # Hand phases, pot, betting round
+│       │   ├── player.rs         # Player seat, chips, hole cards (u128 handles)
+│       │   ├── deck.rs           # Deck state, card utilities
+│       │   └── hand_eval.rs      # Hand evaluation (best 5 from 7)
+│       └── instructions/
+│           ├── create_table.rs
+│           ├── join_table.rs
+│           ├── leave_table.rs
+│           ├── start_hand.rs
+│           ├── player_action.rs
+│           ├── deal_cards.rs           # Legacy shuffle (local testing)
+│           ├── deal_cards_encrypted.rs # VRF + Inco encryption
+│           ├── deal_cards_vrf.rs       # VRF shuffle + deal
+│           ├── showdown.rs             # Winner determination
+│           ├── reveal_cards.rs         # Ed25519 verified card reveal
+│           ├── timeout_player.rs       # Force fold inactive players
+│           ├── timeout_reveal.rs       # Force reveal at showdown
+│           ├── close_inactive_table.rs # Return funds from abandoned table
+│           ├── request_shuffle.rs      # VRF randomness request
+│           ├── callback_shuffle.rs     # VRF callback, stores seed
+│           ├── encrypt_hole_cards.rs   # Inco FHE encryption
+│           └── grant_own_allowance.rs  # Player grants decryption access
+├── app/                          # Next.js frontend (complete)
+│   ├── app/page.tsx             # Main game UI
+│   ├── components/              # UI components
+│   ├── hooks/
+│   │   ├── usePokerGame.ts      # Game logic hook
+│   │   └── usePokerProgram.ts   # Anchor program hook
+│   └── lib/
+│       ├── inco.ts              # Inco SDK integration
+│       └── idl/                 # Program IDL
 ├── tests/
-│   ├── hiddenhand.ts             # Main program tests
-│   └── mb-test.ts                # MagicBlock SDK tests
+│   └── hiddenhand.ts            # Integration tests
+├── marketing/                   # Pitch materials
 ├── Anchor.toml
 └── CLAUDE.md
 ```

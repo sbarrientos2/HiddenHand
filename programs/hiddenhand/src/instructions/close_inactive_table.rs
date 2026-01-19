@@ -75,7 +75,6 @@ pub fn handler(ctx: Context<CloseInactiveTable>) -> Result<()> {
     );
 
     let table_key = table.key();
-    let _vault_seeds: &[&[u8]] = &[VAULT_SEED, table_key.as_ref(), &[ctx.bumps.vault]];
     let program_id = crate::ID;
 
     let mut total_returned: u64 = 0;
@@ -127,7 +126,12 @@ pub fn handler(ctx: Context<CloseInactiveTable>) -> Result<()> {
             if seat.chips > 0 {
                 let transfer_amount = seat.chips;
 
-                // Transfer from vault to player wallet
+                // Transfer from vault to player wallet using direct lamport manipulation.
+                // This is safe because:
+                // 1. Solana transactions are atomic - if any operation fails, all changes rollback
+                // 2. The vault is a PDA we control (verified by seeds constraint)
+                // 3. Adding lamports to a wallet account cannot fail
+                // 4. We verify the wallet matches the seat owner before transfer
                 **vault.try_borrow_mut_lamports()? -= transfer_amount;
                 **wallet_info.try_borrow_mut_lamports()? += transfer_amount;
 

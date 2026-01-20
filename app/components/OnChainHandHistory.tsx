@@ -3,6 +3,7 @@
 import { HandHistoryEntry, formatCard, getSuitColor } from "@/hooks/useHandHistory";
 import { lamportsToSol } from "@/lib/utils";
 import { NETWORK } from "@/contexts/WalletProvider";
+import { Tooltip, InfoIcon } from "@/components/Tooltip";
 
 interface OnChainHandHistoryProps {
   history: HandHistoryEntry[];
@@ -25,9 +26,15 @@ export function OnChainHandHistory({
     return (
       <div className="glass-dark rounded-xl p-4">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold text-[var(--text-primary)]">
-            On-Chain Hand History
-          </h3>
+          <Tooltip
+            title="📜 Blockchain Audit Trail"
+            content="Every showdown is permanently recorded on Solana. Click 'View on Explorer' to verify any hand independently."
+          >
+            <h3 className="text-sm font-semibold text-[var(--text-primary)] flex items-center cursor-help">
+              On-Chain Hand History
+              <InfoIcon />
+            </h3>
+          </Tooltip>
           <span className={`text-xs px-2 py-1 rounded-full ${isListening ? "bg-green-500/20 text-green-400" : "bg-gray-500/20 text-gray-400"}`}>
             {isListening ? "Live" : "Offline"}
           </span>
@@ -42,9 +49,15 @@ export function OnChainHandHistory({
   return (
     <div className="glass-dark rounded-xl p-4">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold text-[var(--text-primary)]">
-          On-Chain Hand History
-        </h3>
+        <Tooltip
+          title="📜 Blockchain Audit Trail"
+          content="Every showdown is permanently recorded on Solana. Click 'View on Explorer' to verify any hand independently."
+        >
+          <h3 className="text-sm font-semibold text-[var(--text-primary)] flex items-center cursor-help">
+            On-Chain Hand History
+            <InfoIcon />
+          </h3>
+        </Tooltip>
         <span className={`text-xs px-2 py-1 rounded-full ${isListening ? "bg-green-500/20 text-green-400" : "bg-gray-500/20 text-gray-400"}`}>
           {isListening ? "Live" : "Offline"}
         </span>

@@ -19,6 +19,7 @@ import { useSounds, soundManager } from "@/lib/sounds";
 import { SoundToggle } from "@/components/SoundToggle";
 import { useHandHistory } from "@/hooks/useHandHistory";
 import { OnChainHandHistory } from "@/components/OnChainHandHistory";
+import { Tooltip, InfoIcon } from "@/components/Tooltip";
 
 export default function Home() {
   const { connected, publicKey, disconnect } = useWallet();
@@ -857,20 +858,26 @@ export default function Home() {
                             <>
                               {/* Step 1: Request VRF Shuffle */}
                               {!gameState.isDeckShuffled && !gameState.isShuffling && (
-                                <button
-                                  onClick={() => withToast(
-                                    () => requestShuffle(),
-                                    "Requesting VRF shuffle...",
-                                    "Deck shuffled (VRF)"
-                                  )}
-                                  disabled={loading}
-                                  className="btn-gold px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50 flex items-center gap-2"
+                                <Tooltip
+                                  title="🎲 Provably Fair Shuffle"
+                                  content="MagicBlock oracle generates verifiable randomness. Dealer cannot manipulate the card order."
                                 >
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                  </svg>
-                                  Shuffle (VRF)
-                                </button>
+                                  <button
+                                    onClick={() => withToast(
+                                      () => requestShuffle(),
+                                      "Requesting VRF shuffle...",
+                                      "Deck shuffled (VRF)"
+                                    )}
+                                    disabled={loading}
+                                    className="btn-gold px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50 flex items-center gap-2"
+                                  >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                    </svg>
+                                    Shuffle (VRF)
+                                    <InfoIcon />
+                                  </button>
+                                </Tooltip>
                               )}
                               {/* Shuffling in progress */}
                               {gameState.isShuffling && (
@@ -1188,23 +1195,29 @@ export default function Home() {
                     Decrypting with Inco...
                   </div>
                 ) : (
-                  <button
-                    onClick={async () => {
-                      try {
-                        await decryptMyCards();
-                        addGameEvent("privacy", "Cards decrypted via Inco FHE");
-                      } catch (e) {
-                        console.error("Decryption failed:", e);
-                      }
-                    }}
-                    disabled={loading}
-                    className="btn-info px-6 py-3 rounded-xl font-semibold disabled:opacity-50 flex items-center gap-2 mx-auto"
+                  <Tooltip
+                    title="🔐 Inco FHE Decryption"
+                    content="Your cards are encrypted on-chain using Fully Homomorphic Encryption. Only you can decrypt them locally - no one else can see your hand."
                   >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
-                    </svg>
-                    Decrypt My Cards
-                  </button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          await decryptMyCards();
+                          addGameEvent("privacy", "Cards decrypted via Inco FHE");
+                        } catch (e) {
+                          console.error("Decryption failed:", e);
+                        }
+                      }}
+                      disabled={loading}
+                      className="btn-info px-6 py-3 rounded-xl font-semibold disabled:opacity-50 flex items-center gap-2 mx-auto"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+                      </svg>
+                      Decrypt My Cards
+                      <InfoIcon />
+                    </button>
+                  </Tooltip>
                 )}
               </div>
             )}
@@ -1237,24 +1250,30 @@ export default function Home() {
                     Revealing cards on-chain...
                   </div>
                 ) : (
-                  <button
-                    onClick={async () => {
-                      try {
-                        await revealCards();
-                        addGameEvent("cards", "Cards revealed for showdown");
-                      } catch (e) {
-                        console.error("Reveal failed:", e);
-                      }
-                    }}
-                    disabled={loading}
-                    className="bg-amber-600 hover:bg-amber-500 text-white px-6 py-3 rounded-xl font-semibold disabled:opacity-50 flex items-center gap-2 mx-auto transition-colors"
+                  <Tooltip
+                    title="✅ Ed25519 Verified Reveal"
+                    content="Cryptographic signature proves these are your real cards from Inco decryption. No one can fake their hand at showdown."
                   >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                    </svg>
-                    Reveal Cards
-                  </button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          await revealCards();
+                          addGameEvent("cards", "Cards revealed for showdown");
+                        } catch (e) {
+                          console.error("Reveal failed:", e);
+                        }
+                      }}
+                      disabled={loading}
+                      className="bg-amber-600 hover:bg-amber-500 text-white px-6 py-3 rounded-xl font-semibold disabled:opacity-50 flex items-center gap-2 mx-auto transition-colors"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                      Reveal Cards
+                      <InfoIcon />
+                    </button>
+                  </Tooltip>
                 )}
               </div>
             )}

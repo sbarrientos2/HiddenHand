@@ -10,6 +10,7 @@ export interface Transaction {
   status: TransactionStatus;
   message: string;
   timestamp: number;
+  error?: string; // Error message for failed transactions
 }
 
 interface TransactionToastProps {
@@ -169,6 +170,12 @@ export const TransactionToast: FC<TransactionToastProps> = ({
                 <p className={`text-sm font-medium ${config.text}`}>
                   {tx.message}
                 </p>
+                {tx.error && (
+                  <p className="text-xs text-[var(--status-danger)] mt-1">
+                    {tx.error}
+                  </p>
+                )}
+                {tx.signature !== "pending" && (
                 <a
                   href={getExplorerUrl(tx.signature)}
                   target="_blank"
@@ -190,6 +197,7 @@ export const TransactionToast: FC<TransactionToastProps> = ({
                     />
                   </svg>
                 </a>
+                )}
               </div>
               <button
                 onClick={() => handleDismiss(tx.id)}
@@ -236,9 +244,14 @@ export const useTransactionToasts = () => {
     return id;
   };
 
-  const updateTransaction = (id: string, status: TransactionStatus) => {
+  const updateTransaction = (id: string, status: TransactionStatus, signature?: string, error?: string) => {
     setTransactions((prev) =>
-      prev.map((tx) => (tx.id === id ? { ...tx, status } : tx))
+      prev.map((tx) => (tx.id === id ? {
+        ...tx,
+        status,
+        ...(signature && { signature }),
+        ...(error && { error }),
+      } : tx))
     );
   };
 

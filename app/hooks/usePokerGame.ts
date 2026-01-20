@@ -17,25 +17,6 @@ import {
   DEFAULT_QUEUE,
   waitForShuffle,
 } from "@/lib/magicblock";
-
-// Inco Lightning FHE Program ID
-const INCO_PROGRAM_ID = new PublicKey("5sjEbPiqgZrYwR31ahR6Uk9wf5awoX61YGg7jExQSwaj");
-
-// Derive Inco allowance PDA from encrypted handle
-// Seeds: [handle_le_bytes, player_pubkey] (NO "allowance" prefix!)
-function getIncoAllowancePDA(handle: bigint, playerPubkey: PublicKey): [PublicKey, number] {
-  // Convert BigInt handle to 16-byte little-endian buffer
-  const handleBuf = Buffer.alloc(16);
-  let h = handle;
-  for (let i = 0; i < 16; i++) {
-    handleBuf[i] = Number(h & BigInt(0xFF));
-    h >>= BigInt(8);
-  }
-  return PublicKey.findProgramAddressSync(
-    [handleBuf, playerPubkey.toBuffer()],
-    INCO_PROGRAM_ID
-  );
-}
 import {
   mapPlayerStatus,
   mapGamePhase,
@@ -43,7 +24,7 @@ import {
   getOccupiedSeats,
   parseAnchorError,
 } from "@/lib/utils";
-import { decryptCardsWithAttestation } from "@/lib/inco";
+import { decryptCardsWithAttestation, getAllowancePDA, INCO_PROGRAM_ID } from "@/lib/inco";
 import { TransactionInstruction, Transaction } from "@solana/web3.js";
 
 // Types matching the IDL
@@ -513,8 +494,8 @@ export function usePokerGame(): UsePokerGameResult {
 
             // Check if allowance accounts exist AND are owned by Inco program
             if (handle1 > BigInt(255) && handle2 > BigInt(255)) {
-              const [allowancePDA1] = getIncoAllowancePDA(handle1, publicKey);
-              const [allowancePDA2] = getIncoAllowancePDA(handle2, publicKey);
+              const [allowancePDA1] = getAllowancePDA(handle1, publicKey);
+              const [allowancePDA2] = getAllowancePDA(handle2, publicKey);
 
               // Check if both allowance accounts exist and are owned by Inco
               const [acct1, acct2] = await Promise.all([
@@ -552,8 +533,8 @@ export function usePokerGame(): UsePokerGameResult {
 
                   if (handle1 > BigInt(255) && handle2 > BigInt(255)) {
                     const playerPubkey = new PublicKey(player.player);
-                    const [allowancePDA1] = getIncoAllowancePDA(handle1, playerPubkey);
-                    const [allowancePDA2] = getIncoAllowancePDA(handle2, playerPubkey);
+                    const [allowancePDA1] = getAllowancePDA(handle1, playerPubkey);
+                    const [allowancePDA2] = getAllowancePDA(handle2, playerPubkey);
 
                     const [acct1, acct2] = await Promise.all([
                       provider.connection.getAccountInfo(allowancePDA1),
@@ -1181,8 +1162,8 @@ export function usePokerGame(): UsePokerGameResult {
       }
 
       // Derive allowance PDAs from the encrypted handles
-      const [allowancePDA1] = getIncoAllowancePDA(handle1, seat.player);
-      const [allowancePDA2] = getIncoAllowancePDA(handle2, seat.player);
+      const [allowancePDA1] = getAllowancePDA(handle1, seat.player);
+      const [allowancePDA2] = getAllowancePDA(handle2, seat.player);
 
       console.log(`Granting decryption allowances for seat ${seatIndex}...`);
       console.log(`  Handle 1: ${handle1.toString()}`);
@@ -1378,6 +1359,14 @@ export function usePokerGame(): UsePokerGameResult {
       const card1 = result.plaintexts[0] ?? null;
       const card2 = result.plaintexts[1] ?? null;
 
+      // Validate decrypted card values are in valid range (0-51)
+      if (card1 !== null && (card1 < 0 || card1 > 51)) {
+        throw new Error(`Invalid decrypted card value: ${card1}. Expected 0-51.`);
+      }
+      if (card2 !== null && (card2 < 0 || card2 > 51)) {
+        throw new Error(`Invalid decrypted card value: ${card2}. Expected 0-51.`);
+      }
+
       // Update state with decrypted cards AND Ed25519 instructions for later reveal
       setGameState((prev) => ({
         ...prev,
@@ -1409,9 +1398,10 @@ export function usePokerGame(): UsePokerGameResult {
     }
 
     // Check if we have Ed25519 attestation instructions
+    // Program expects exactly 2 instructions at specific indices for verification
     const ed25519Ixs = gameState.ed25519Instructions;
-    if (ed25519Ixs.length < 2) {
-      console.warn(`Expected 2 Ed25519 instructions, got ${ed25519Ixs.length}. Verification may fail.`);
+    if (ed25519Ixs.length !== 2) {
+      throw new Error(`Expected exactly 2 Ed25519 instructions for card verification, got ${ed25519Ixs.length}. Cannot reveal cards safely - please decrypt your cards first.`);
     }
 
     console.log("Revealing cards for showdown:", card1, card2);
@@ -1507,8 +1497,8 @@ export function usePokerGame(): UsePokerGameResult {
       }
 
       // Derive allowance PDAs
-      const [allowancePDA1] = getIncoAllowancePDA(handle1, publicKey);
-      const [allowancePDA2] = getIncoAllowancePDA(handle2, publicKey);
+      const [allowancePDA1] = getAllowancePDA(handle1, publicKey);
+      const [allowancePDA2] = getAllowancePDA(handle2, publicKey);
 
       console.log("Self-granting allowance after timeout...");
 

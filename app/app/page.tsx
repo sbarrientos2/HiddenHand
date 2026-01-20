@@ -67,9 +67,9 @@ export default function Home() {
   // On-chain hand history from events
   const { history: onChainHistory, isListening: isHistoryListening } = useHandHistory(program);
 
-  // Expose hook functions to window for console testing (only once on mount)
+  // Expose hook functions to window for console testing (development only)
   useEffect(() => {
-    if (typeof window !== "undefined") {
+    if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const pokerGame = (window as any).__pokerGame || {};
       // Only update functions, not gameState (to avoid constant updates)
@@ -87,6 +87,13 @@ export default function Home() {
       pokerGame.getGameState = () => gameState;
       (window as any).__pokerGame = pokerGame;
     }
+    // Cleanup on unmount
+    return () => {
+      if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        delete (window as any).__pokerGame;
+      }
+    };
   }, [encryptHoleCards, grantCardAllowance, encryptAndGrantCards, encryptAllPlayersCards, grantAllPlayersAllowances, decryptMyCards, revealCards, grantOwnAllowance, timeoutReveal, closeInactiveTable]);
 
   // Transaction toast notifications
@@ -119,13 +126,17 @@ export default function Home() {
     pendingMessage: string,
     successMessage: string
   ) => {
+    // Add pending toast immediately so user sees something is happening
+    const toastId = addTransaction("pending", pendingMessage);
     try {
       const tx = await action();
-      const toastId = addTransaction(tx, pendingMessage);
-      // Mark as confirmed after a short delay (confirmation already happened in the hook)
-      setTimeout(() => updateTransaction(toastId, "confirmed"), 500);
+      // Update with actual transaction signature and mark as confirmed
+      updateTransaction(toastId, "confirmed", tx);
       return tx;
     } catch (e) {
+      // Update toast to show error
+      const errorMessage = e instanceof Error ? e.message : "Transaction failed";
+      updateTransaction(toastId, "error", undefined, errorMessage);
       throw e;
     }
   };

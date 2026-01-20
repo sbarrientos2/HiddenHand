@@ -68,7 +68,7 @@ export function OpponentTimer({
             </div>
             <div className="flex flex-col">
               <span className="text-xs text-[var(--text-muted)] uppercase tracking-wider">
-                Seat {actionOn}
+                Seat {actionOn + 1}
               </span>
               <span className="text-sm" style={{ color }}>
                 {canTimeout ? "Timed out!" : `${timeLeft}s left`}

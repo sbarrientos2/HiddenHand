@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { TIMER_UPDATE_INTERVAL_MS } from "@/lib/constants";
 
 interface AuthorityTimeoutPanelProps {
   lastTimestamp: number | null;
@@ -50,7 +51,7 @@ export function AuthorityTimeoutPanel({
     updateTimer();
 
     // Update every second
-    const interval = setInterval(updateTimer, 1000);
+    const interval = setInterval(updateTimer, TIMER_UPDATE_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [lastTimestamp, delayBeforeShowing, timeoutSeconds]);
 

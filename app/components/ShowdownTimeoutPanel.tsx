@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-
-const TIMEOUT_SECONDS = 60;
+import { ACTION_TIMEOUT_SECONDS, TIMER_UPDATE_INTERVAL_MS } from "@/lib/constants";
 
 interface ShowdownTimeoutPanelProps {
   lastActionTime: number | null;
@@ -17,12 +16,12 @@ export function ShowdownTimeoutPanel({
   onShowdown,
   isLoading,
 }: ShowdownTimeoutPanelProps) {
-  const [secondsRemaining, setSecondsRemaining] = useState<number>(TIMEOUT_SECONDS);
+  const [secondsRemaining, setSecondsRemaining] = useState<number>(ACTION_TIMEOUT_SECONDS);
   const [canTrigger, setCanTrigger] = useState(false);
 
   useEffect(() => {
     if (!lastActionTime) {
-      setSecondsRemaining(TIMEOUT_SECONDS);
+      setSecondsRemaining(ACTION_TIMEOUT_SECONDS);
       setCanTrigger(false);
       return;
     }
@@ -30,7 +29,7 @@ export function ShowdownTimeoutPanel({
     const updateTimer = () => {
       const now = Math.floor(Date.now() / 1000);
       const elapsed = now - lastActionTime;
-      const remaining = Math.max(0, TIMEOUT_SECONDS - elapsed);
+      const remaining = Math.max(0, ACTION_TIMEOUT_SECONDS - elapsed);
 
       setSecondsRemaining(remaining);
       setCanTrigger(remaining === 0);
@@ -40,7 +39,7 @@ export function ShowdownTimeoutPanel({
     updateTimer();
 
     // Update every second
-    const interval = setInterval(updateTimer, 1000);
+    const interval = setInterval(updateTimer, TIMER_UPDATE_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [lastActionTime]);
 

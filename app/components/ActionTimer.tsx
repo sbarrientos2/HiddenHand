@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { ACTION_TIMEOUT_SECONDS, TIMER_UPDATE_INTERVAL_MS } from "@/lib/constants";
 
 interface ActionTimerProps {
   lastActionTime: number | null; // Unix timestamp in seconds
@@ -8,11 +9,9 @@ interface ActionTimerProps {
   isPlayerTurn: boolean;
 }
 
-const ACTION_TIMEOUT = 60; // 60 seconds to act
-
 export function ActionTimer({
   lastActionTime,
-  timeoutSeconds = ACTION_TIMEOUT,
+  timeoutSeconds = ACTION_TIMEOUT_SECONDS,
   isPlayerTurn,
 }: ActionTimerProps) {
   const [timeLeft, setTimeLeft] = useState<number>(timeoutSeconds);
@@ -34,7 +33,7 @@ export function ActionTimer({
     updateTimer();
 
     // Update every second
-    const interval = setInterval(updateTimer, 1000);
+    const interval = setInterval(updateTimer, TIMER_UPDATE_INTERVAL_MS);
 
     return () => clearInterval(interval);
   }, [lastActionTime, timeoutSeconds, isPlayerTurn]);

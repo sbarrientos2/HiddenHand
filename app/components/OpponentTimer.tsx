@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { ACTION_TIMEOUT_SECONDS, TIMER_UPDATE_INTERVAL_MS } from "@/lib/constants";
 
 interface OpponentTimerProps {
   lastActionTime: number; // Unix timestamp in seconds
@@ -10,14 +11,12 @@ interface OpponentTimerProps {
   timeoutSeconds?: number;
 }
 
-const ACTION_TIMEOUT = 60; // 60 seconds to act
-
 export function OpponentTimer({
   lastActionTime,
   actionOn,
   onTimeout,
   isLoading,
-  timeoutSeconds = ACTION_TIMEOUT,
+  timeoutSeconds = ACTION_TIMEOUT_SECONDS,
 }: OpponentTimerProps) {
   const [timeLeft, setTimeLeft] = useState<number>(timeoutSeconds);
   const [canTimeout, setCanTimeout] = useState(false);
@@ -41,7 +40,7 @@ export function OpponentTimer({
     updateTimer();
 
     // Update every second
-    const interval = setInterval(updateTimer, 1000);
+    const interval = setInterval(updateTimer, TIMER_UPDATE_INTERVAL_MS);
 
     return () => clearInterval(interval);
   }, [lastActionTime, timeoutSeconds]);

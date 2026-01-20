@@ -2,6 +2,7 @@
 
 import { HandHistoryEntry, formatCard, getSuitColor } from "@/hooks/useHandHistory";
 import { lamportsToSol } from "@/lib/utils";
+import { SECONDS_PER_MINUTE, SECONDS_PER_HOUR, SECONDS_PER_DAY } from "@/lib/constants";
 import { NETWORK } from "@/contexts/WalletProvider";
 import { Tooltip, InfoIcon } from "@/components/Tooltip";
 
@@ -176,8 +177,8 @@ export function OnChainHandHistory({
 function formatTimeAgo(date: Date): string {
   const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
 
-  if (seconds < 60) return `${seconds}s ago`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  if (seconds < SECONDS_PER_MINUTE) return `${seconds}s ago`;
+  if (seconds < SECONDS_PER_HOUR) return `${Math.floor(seconds / SECONDS_PER_MINUTE)}m ago`;
+  if (seconds < SECONDS_PER_DAY) return `${Math.floor(seconds / SECONDS_PER_HOUR)}h ago`;
   return date.toLocaleDateString();
 }

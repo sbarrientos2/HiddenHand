@@ -154,7 +154,8 @@ export interface GameState {
   useIncoPrivacy: boolean; // Whether to use Inco FHE encryption for cards
   isEncrypting: boolean; // Inco encryption in progress
   areCardsEncrypted: boolean; // Whether current cards are Inco-encrypted
-  areAllowancesGranted: boolean; // Whether decryption allowances have been granted
+  areAllowancesGranted: boolean; // Whether current player's decryption allowances have been granted
+  allPlayersHaveAllowances: boolean; // Whether ALL active players have allowances (for Grant button)
   isDecrypting: boolean; // Inco decryption in progress
   decryptedCards: [number | null, number | null]; // Client-side decrypted cards
   isRevealing: boolean; // Card reveal in progress (for showdown)
@@ -253,6 +254,7 @@ const initialGameState: GameState = {
   isEncrypting: false,
   areCardsEncrypted: false,
   areAllowancesGranted: false,
+  allPlayersHaveAllowances: false,
   isDecrypting: false,
   decryptedCards: [null, null],
   isRevealing: false,
@@ -532,6 +534,51 @@ export function usePokerGame(): UsePokerGameResult {
         }
       }
 
+      // Check if ALL active players have allowances (for Grant Allowances button visibility)
+      // This is separate from the per-player check above - authority needs to know if ALL players are ready
+      let detectedAllPlayersHaveAllowances = false;
+      if (!resetEncryptionState && detectedCardsEncrypted) {
+        const activePlayers = players.filter(p => p.isEncrypted === true && p.player);
+
+        if (activePlayers.length > 0) {
+          try {
+            const allowanceChecks = await Promise.all(
+              activePlayers.map(async (player) => {
+                try {
+                  const [seatPDA] = getSeatPDA(gameState.tablePDA!, player.seatIndex);
+                  const seat = await accounts.playerSeat.fetch(seatPDA) as PlayerSeatAccount;
+                  const handle1 = BigInt(seat.holeCard1.toString());
+                  const handle2 = BigInt(seat.holeCard2.toString());
+
+                  if (handle1 > BigInt(255) && handle2 > BigInt(255)) {
+                    const playerPubkey = new PublicKey(player.player);
+                    const [allowancePDA1] = getIncoAllowancePDA(handle1, playerPubkey);
+                    const [allowancePDA2] = getIncoAllowancePDA(handle2, playerPubkey);
+
+                    const [acct1, acct2] = await Promise.all([
+                      provider.connection.getAccountInfo(allowancePDA1),
+                      provider.connection.getAccountInfo(allowancePDA2),
+                    ]);
+
+                    const isValid1 = acct1 !== null && acct1.owner.equals(INCO_PROGRAM_ID);
+                    const isValid2 = acct2 !== null && acct2.owner.equals(INCO_PROGRAM_ID);
+                    return isValid1 && isValid2;
+                  }
+                  return false;
+                } catch (e) {
+                  return false;
+                }
+              })
+            );
+
+            // All players must have allowances
+            detectedAllPlayersHaveAllowances = allowanceChecks.length > 0 && allowanceChecks.every(has => has);
+          } catch (e) {
+            // Ignore errors
+          }
+        }
+      }
+
       setGameState((prev) => ({
         ...prev,
         table,
@@ -559,6 +606,8 @@ export function usePokerGame(): UsePokerGameResult {
         // Allowances: prefer on-chain detection, but preserve local state to avoid race conditions
         // Only preserve local state if we're in the same hand (detectedCardsEncrypted implies same hand)
         areAllowancesGranted: resetEncryptionState ? false : (detectedAllowancesGranted || (detectedCardsEncrypted && prev.areAllowancesGranted)),
+        // All players have allowances: for Grant Allowances button visibility (authority needs this)
+        allPlayersHaveAllowances: resetEncryptionState ? false : (detectedAllPlayersHaveAllowances || (detectedCardsEncrypted && prev.allPlayersHaveAllowances)),
         isEncrypting: resetEncryptionState ? false : prev.isEncrypting,
         isDecrypting: resetEncryptionState ? false : prev.isDecrypting,
         decryptedCards: resetEncryptionState ? [null, null] : prev.decryptedCards,
@@ -747,6 +796,7 @@ export function usePokerGame(): UsePokerGameResult {
       ...prev,
       areCardsEncrypted: false,
       areAllowancesGranted: false,
+      allPlayersHaveAllowances: false,
       isEncrypting: false,
       isDecrypting: false,
       decryptedCards: [null, null],
@@ -1261,6 +1311,7 @@ export function usePokerGame(): UsePokerGameResult {
         ...prev,
         isEncrypting: false,
         areAllowancesGranted: true,
+        allPlayersHaveAllowances: true,
         encryptionHandNumber: handNumber,
       }));
 
@@ -1282,6 +1333,12 @@ export function usePokerGame(): UsePokerGameResult {
   const decryptMyCards = useCallback(async (): Promise<void> => {
     if (!program || !publicKey || !signMessage || !gameState.tablePDA || gameState.currentPlayerSeat === null) {
       throw new Error("Not ready to decrypt - wallet not connected or not at table");
+    }
+
+    // FAIRNESS CHECK: Don't allow decryption until ALL players have allowances
+    // This prevents authority from seeing their cards before granting allowances to others
+    if (!gameState.allPlayersHaveAllowances) {
+      throw new Error("Cannot decrypt until all players have been granted allowances - click 'Grant Allowances' first");
     }
 
     console.log("Starting Inco decryption for your cards...");
@@ -1335,7 +1392,7 @@ export function usePokerGame(): UsePokerGameResult {
       setGameState((prev) => ({ ...prev, isDecrypting: false }));
       throw e;
     }
-  }, [program, publicKey, signMessage, gameState.tablePDA, gameState.currentPlayerSeat]);
+  }, [program, publicKey, signMessage, gameState.tablePDA, gameState.currentPlayerSeat, gameState.allPlayersHaveAllowances]);
 
   // Reveal cards for showdown (submits decrypted cards to blockchain)
   // IMPORTANT: Includes Ed25519 verification instructions from Inco attestation

@@ -20,6 +20,13 @@ import { SoundToggle } from "@/components/SoundToggle";
 import { useHandHistory } from "@/hooks/useHandHistory";
 import { OnChainHandHistory } from "@/components/OnChainHandHistory";
 import { Tooltip, InfoIcon } from "@/components/Tooltip";
+import {
+  ACTION_TIMEOUT_SECONDS,
+  DEAL_TIMEOUT_SECONDS,
+  ALLOWANCE_TIMEOUT_SECONDS,
+  REVEAL_TIMEOUT_SECONDS,
+  TABLE_INACTIVE_TIMEOUT_SECONDS,
+} from "@/lib/constants";
 
 export default function Home() {
   const { connected, publicKey, disconnect } = useWallet();
@@ -703,7 +710,7 @@ export default function Home() {
                     {/* Close inactive table - shows after 1 hour of inactivity */}
                     {gameState.tableStatus === "Waiting" &&
                      gameState.lastReadyTime &&
-                     (Date.now() / 1000 - gameState.lastReadyTime) >= 3600 && (
+                     (Date.now() / 1000 - gameState.lastReadyTime) >= TABLE_INACTIVE_TIMEOUT_SECONDS && (
                       <button
                         onClick={async () => {
                           if (confirm("Are you sure you want to close this table? All funds will be returned to players.")) {
@@ -969,28 +976,34 @@ export default function Home() {
                           </div>
                         )}
                         {/* Grant Allowances button - for atomic encryption where cards are encrypted but allowances need to be granted */}
-                        {gameState.areCardsEncrypted && !gameState.areAllowancesGranted && !gameState.isEncrypting && (
-                          <button
-                            onClick={async () => {
-                              try {
-                                await grantAllPlayersAllowances();
-                                addGameEvent("privacy", "Decryption allowances granted for all players");
-                              } catch (e) {
-                                console.error("Failed to grant allowances:", e);
-                              }
-                            }}
-                            disabled={loading}
-                            className="btn-info px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50 flex items-center gap-2"
+                        {/* Uses allPlayersHaveAllowances to show button until ALL players have allowances, not just authority */}
+                        {gameState.isAuthority && gameState.areCardsEncrypted && !gameState.allPlayersHaveAllowances && !gameState.isEncrypting && (
+                          <Tooltip
+                            title="🔑 Grant Decryption Access"
+                            content="Cards are encrypted with Inco FHE. Click to grant all players permission to decrypt their own cards. No one can see their cards until you do this."
                           >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-                            </svg>
-                            Grant Allowances
-                          </button>
+                            <button
+                              onClick={async () => {
+                                try {
+                                  await grantAllPlayersAllowances();
+                                  addGameEvent("privacy", "Decryption allowances granted for all players");
+                                } catch (e) {
+                                  console.error("Failed to grant allowances:", e);
+                                }
+                              }}
+                              disabled={loading}
+                              className="btn-info px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50 flex items-center gap-2"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                              </svg>
+                              Grant Allowances
+                            </button>
+                          </Tooltip>
                         )}
-                        {/* Self-grant allowance button - for non-authority after 60s timeout */}
+                        {/* Self-grant allowance button - for non-authority after timeout */}
                         {gameState.areCardsEncrypted && !gameState.areAllowancesGranted && !gameState.isAuthority && !gameState.isEncrypting &&
-                         gameState.lastActionTime && (Date.now() / 1000 - gameState.lastActionTime) >= 60 && (
+                         gameState.lastActionTime && (Date.now() / 1000 - gameState.lastActionTime) >= ALLOWANCE_TIMEOUT_SECONDS && (
                           <button
                             onClick={async () => {
                               try {
@@ -1009,8 +1022,8 @@ export default function Home() {
                             Grant My Allowance (Timeout)
                           </button>
                         )}
-                        {/* Allowances granted indicator */}
-                        {gameState.areCardsEncrypted && gameState.areAllowancesGranted && (
+                        {/* Allowances granted indicator - shows when ALL players have allowances */}
+                        {gameState.areCardsEncrypted && gameState.allPlayersHaveAllowances && (
                           <div className="flex items-center gap-2 glass-dark px-3 py-1.5 rounded-lg border border-green-500/30">
                             <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -1042,11 +1055,11 @@ export default function Home() {
                           <p className="text-xs text-[var(--text-muted)] mt-1">
                             All players must reveal before showdown
                           </p>
-                          {/* Timeout reveal option after 3 minutes */}
-                          {gameState.lastActionTime && (Date.now() / 1000 - gameState.lastActionTime) >= 180 && (
+                          {/* Timeout reveal option after reveal timeout */}
+                          {gameState.lastActionTime && (Date.now() / 1000 - gameState.lastActionTime) >= REVEAL_TIMEOUT_SECONDS && (
                             <div className="mt-3 pt-3 border-t border-white/10">
                               <p className="text-orange-400 text-xs mb-2">
-                                3 minute timeout reached - you can muck non-revealing players
+                                Reveal timeout reached - you can muck non-revealing players
                               </p>
                               <div className="flex flex-wrap gap-2 justify-center">
                                 {activePlayers
@@ -1092,8 +1105,8 @@ export default function Home() {
               gameState.players.filter((p) => p.status !== "empty" && p.chips > 0).length >= 2 && (
               <AuthorityTimeoutPanel
                 lastTimestamp={gameState.lastReadyTime}
-                delayBeforeShowing={30}
-                timeoutSeconds={60}
+                delayBeforeShowing={DEAL_TIMEOUT_SECONDS}
+                timeoutSeconds={ACTION_TIMEOUT_SECONDS}
                 waitingMessage="Waiting for authority to start hand..."
                 readyMessage="Timeout reached - you can start the hand"
                 buttonLabel="Start Hand"
@@ -1107,8 +1120,8 @@ export default function Home() {
               gameState.phase === "Dealing" && (
               <AuthorityTimeoutPanel
                 lastTimestamp={gameState.lastActionTime}
-                delayBeforeShowing={15}
-                timeoutSeconds={30}
+                delayBeforeShowing={Math.floor(DEAL_TIMEOUT_SECONDS / 2)}
+                timeoutSeconds={DEAL_TIMEOUT_SECONDS}
                 waitingMessage="Waiting for authority to deal cards..."
                 readyMessage="Timeout reached - you can deal the cards"
                 buttonLabel="Deal Cards"
@@ -1172,9 +1185,10 @@ export default function Home() {
 
             {/* Decrypt My Cards button - shows when current player has encrypted cards AND allowances granted */}
             {/* Button appears for all players once authority grants allowances (detected on-chain) */}
+            {/* FAIRNESS: Requires allPlayersHaveAllowances so no one can decrypt before others */}
             {/* Also check phase is not Dealing (cards must be dealt first) */}
             {currentPlayer && currentPlayer.isEncrypted && gameState.decryptedCards[0] === null &&
-             gameState.areAllowancesGranted &&
+             gameState.areAllowancesGranted && gameState.allPlayersHaveAllowances &&
              gameState.tableStatus === "Playing" &&
              gameState.phase !== "Settled" && gameState.phase !== "Dealing" && (
               <div className="max-w-md mx-auto glass border border-cyan-500/30 rounded-2xl p-5 text-center">

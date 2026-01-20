@@ -15,6 +15,10 @@ import { GameHistory, useGameHistory } from "@/components/GameHistory";
 import { NETWORK } from "@/contexts/WalletProvider";
 import { solToLamports, lamportsToSol } from "@/lib/utils";
 import { evaluateHand, getHandDescription } from "@/lib/handEval";
+import { useSounds, soundManager } from "@/lib/sounds";
+import { SoundToggle } from "@/components/SoundToggle";
+import { useHandHistory } from "@/hooks/useHandHistory";
+import { OnChainHandHistory } from "@/components/OnChainHandHistory";
 
 export default function Home() {
   const { connected, publicKey, disconnect } = useWallet();
@@ -48,7 +52,12 @@ export default function Home() {
     grantOwnAllowance,
     timeoutReveal,
     closeInactiveTable,
+    // Program for event listeners
+    program,
   } = usePokerGame();
+
+  // On-chain hand history from events
+  const { history: onChainHistory, isListening: isHistoryListening } = useHandHistory(program);
 
   // Expose hook functions to window for console testing (only once on mount)
   useEffect(() => {
@@ -82,6 +91,19 @@ export default function Home() {
 
   // Game history/action log
   const { events: gameEvents, addEvent: addGameEvent, clearHistory } = useGameHistory();
+
+  // Sound effects
+  const { playSound, initSounds } = useSounds();
+
+  // Initialize sounds on first user interaction
+  useEffect(() => {
+    const handleFirstInteraction = () => {
+      initSounds();
+      document.removeEventListener('click', handleFirstInteraction);
+    };
+    document.addEventListener('click', handleFirstInteraction);
+    return () => document.removeEventListener('click', handleFirstInteraction);
+  }, [initSounds]);
 
   // Wrapper to execute actions with toast notifications
   const withToast = async (
@@ -148,6 +170,21 @@ export default function Home() {
 
     // Track phase changes
     if (prevPhaseRef.current !== gameState.phase) {
+      // Play sounds for phase transitions
+      switch (gameState.phase) {
+        case "Dealing":
+          playSound("shuffle");
+          break;
+        case "PreFlop":
+          playSound("cardDeal");
+          break;
+        case "Flop":
+        case "Turn":
+        case "River":
+          playSound("cardFlip");
+          break;
+      }
+
       // Phase messages - Flop/Turn/River handled by card events, no duplicate messages
       const phaseMessages: Record<string, string | null> = {
         "Dealing": "New hand starting...",
@@ -212,6 +249,12 @@ export default function Home() {
           });
         });
 
+        // Play win sound if current player won
+        const currentPlayerSeat = gameState.players.find(p => p.player === publicKey?.toString());
+        if (currentPlayerSeat && winners.some(w => w.seatIndex === currentPlayerSeat.seatIndex)) {
+          playSound("chipWin");
+        }
+
         // Clear the chip tracking for next hand
         chipsBeforeShowdownRef.current = new Map();
       }
@@ -245,7 +288,7 @@ export default function Home() {
       }
       prevCommunityRef.current = [...currentCommunity];
     }
-  }, [gameState.phase, gameState.communityCards, gameState.players, addGameEvent]);
+  }, [gameState.phase, gameState.communityCards, gameState.players, addGameEvent, playSound, publicKey]);
 
   // Find current player info
   const currentPlayer = gameState.players.find(
@@ -281,6 +324,15 @@ export default function Home() {
   // Check if we're in a betting phase (for showing timers)
   const isBettingPhase = ["PreFlop", "Flop", "Turn", "River"].includes(gameState.phase);
 
+  // Play sound when it becomes player's turn
+  const wasPlayerTurnRef = useRef(false);
+  useEffect(() => {
+    if (isPlayerTurn && !wasPlayerTurnRef.current) {
+      playSound("yourTurn");
+    }
+    wasPlayerTurnRef.current = isPlayerTurn ?? false;
+  }, [isPlayerTurn, playSound]);
+
   // Handle player action
   const handleAction = async (action: string, amount?: number) => {
     let actionType: ActionType;
@@ -308,6 +360,15 @@ export default function Home() {
         break;
       default:
         return;
+    }
+
+    // Play sound for the action
+    switch (action) {
+      case "fold": playSound("fold"); break;
+      case "check": playSound("check"); break;
+      case "call": playSound("chipBet"); break;
+      case "raise": playSound("chipBet"); break;
+      case "allin": playSound("allIn"); break;
     }
 
     try {
@@ -443,7 +504,10 @@ export default function Home() {
           </span>
         </div>
 
-        <WalletButton className="btn-gold !text-sm !px-5 !py-2.5 !rounded-xl" />
+        <div className="flex items-center gap-3">
+          <SoundToggle />
+          <WalletButton className="btn-gold !text-sm !px-5 !py-2.5 !rounded-xl" />
+        </div>
       </header>
 
       {/* Main content */}
@@ -1285,6 +1349,17 @@ export default function Home() {
             {gameEvents.length > 0 && gameState.table && (
               <div className="max-w-lg mx-auto mt-4">
                 <GameHistory events={gameEvents} maxHeight="250px" />
+              </div>
+            )}
+
+            {/* On-Chain Hand History - shows verified hand results from blockchain events */}
+            {gameState.table && (
+              <div className="max-w-lg mx-auto mt-4">
+                <OnChainHandHistory
+                  history={onChainHistory}
+                  currentPlayerPubkey={publicKey?.toString()}
+                  isListening={isHistoryListening}
+                />
               </div>
             )}
 

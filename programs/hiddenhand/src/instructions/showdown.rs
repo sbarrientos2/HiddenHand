@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 
 use crate::constants::*;
 use crate::error::HiddenHandError;
+use crate::events::{HandCompleted, PlayerHandResult};
 use crate::state::{evaluate_hand, find_winners, GamePhase, HandState, PlayerSeat, PlayerStatus, Table, TableStatus};
 
 /// Helper to validate a seat account from remaining_accounts
@@ -125,13 +126,63 @@ pub fn handler(ctx: Context<Showdown>) -> Result<()> {
     let mut active_seats: Vec<(u8, usize)> = Vec::new();
     let program_id = crate::ID;
 
+    // === EARLY: Collect ALL player data for event emission BEFORE any modifications ===
+    // This must happen first because modifying accounts can cause borrow issues
+    let mut event_results: [PlayerHandResult; 6] = Default::default();
+    let mut results_count: u8 = 0;
+
     for (idx, account_info) in ctx.remaining_accounts.iter().enumerate() {
-        // Validate seat account (owner check + PDA verification)
+        if results_count >= 6 {
+            break;
+        }
         if let Some(seat) = validate_seat_account(account_info, &table.key(), &program_id) {
-            // Only include active players (not folded)
+            // Track active seats for later processing
             if seat.status == PlayerStatus::Playing || seat.status == PlayerStatus::AllIn {
                 active_seats.push((seat.seat_index, idx));
             }
+
+            // Collect event data for ALL seats (including folded)
+            let hole_1 = if seat.cards_revealed {
+                seat.revealed_card_1
+            } else if seat.status == PlayerStatus::Folded {
+                255 // Don't show folded player's cards
+            } else {
+                (seat.hole_card_1 & 0xFF) as u8
+            };
+            let hole_2 = if seat.cards_revealed {
+                seat.revealed_card_2
+            } else if seat.status == PlayerStatus::Folded {
+                255
+            } else {
+                (seat.hole_card_2 & 0xFF) as u8
+            };
+
+            // Calculate hand rank if cards are shown and we have community cards
+            let hand_rank = if hole_1 != 255 && hole_2 != 255 && community_cards.len() == 5 {
+                let eval = evaluate_hand(&[
+                    hole_1, hole_2,
+                    community_cards[0], community_cards[1], community_cards[2],
+                    community_cards[3], community_cards[4],
+                ]);
+                eval.rank as u8
+            } else {
+                255 // Not evaluated
+            };
+
+            let chips_bet = seat.total_bet_this_hand;
+
+            event_results[results_count as usize] = PlayerHandResult {
+                player: seat.player,
+                seat_index: seat.seat_index,
+                hole_card_1: hole_1,
+                hole_card_2: hole_2,
+                hand_rank,
+                chips_won: 0,
+                chips_bet,
+                folded: seat.status == PlayerStatus::Folded,
+                all_in: seat.status == PlayerStatus::AllIn,
+            };
+            results_count += 1;
         }
     }
 
@@ -297,6 +348,26 @@ pub fn handler(ctx: Context<Showdown>) -> Result<()> {
             }
         }
     }
+
+    // Emit the hand completed event for audit trail (using pre-collected data)
+    emit!(HandCompleted {
+        table_id: table.table_id,
+        hand_number: hand_state.hand_number,
+        timestamp: clock.unix_timestamp,
+        community_cards: [
+            community_cards.get(0).copied().unwrap_or(255),
+            community_cards.get(1).copied().unwrap_or(255),
+            community_cards.get(2).copied().unwrap_or(255),
+            community_cards.get(3).copied().unwrap_or(255),
+            community_cards.get(4).copied().unwrap_or(255),
+        ],
+        total_pot: pot,
+        player_count: results_count,
+        results: event_results,
+        results_count,
+    });
+
+    msg!("HandCompleted event emitted for hand #{}", hand_state.hand_number);
 
     // Reset all player states for next hand (including folded players)
     for account_info in ctx.remaining_accounts.iter() {

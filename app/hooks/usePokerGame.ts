@@ -202,6 +202,9 @@ export interface UsePokerGameResult {
   setTableId: (tableId: string) => void;
   setUseVrf: (useVrf: boolean) => void;
   setUseIncoPrivacy: (useInco: boolean) => void;
+
+  // Program instance (for event listeners)
+  program: ReturnType<typeof usePokerProgram>["program"];
 }
 
 export interface CreateTableConfig {
@@ -1668,6 +1671,8 @@ export function usePokerGame(): UsePokerGameResult {
 
       // Get all player seat PDAs as remaining accounts
       const occupied = getOccupiedSeats(gameState.table.occupiedSeats, gameState.table.maxPlayers);
+      console.log("[Showdown] Occupied seats:", occupied, "from occupiedSeats bitmask:", gameState.table.occupiedSeats);
+
       const remainingAccounts: { pubkey: PublicKey; isSigner: boolean; isWritable: boolean }[] = [];
 
       for (const seatIndex of occupied) {
@@ -1680,11 +1685,16 @@ export function usePokerGame(): UsePokerGameResult {
               isSigner: false,
               isWritable: true,
             });
+            console.log(`[Showdown] Added seat ${seatIndex}:`, seatPDA.toString());
+          } else {
+            console.warn(`[Showdown] Seat ${seatIndex} has no data, skipping`);
           }
-        } catch {
-          console.warn(`Seat ${seatIndex} account not found, skipping`);
+        } catch (e) {
+          console.warn(`[Showdown] Seat ${seatIndex} account not found, skipping:`, e);
         }
       }
+
+      console.log("[Showdown] Passing", remainingAccounts.length, "seat accounts to showdown");
 
       const tx = await program.methods
         .showdown()
@@ -1783,5 +1793,7 @@ export function usePokerGame(): UsePokerGameResult {
     setTableId,
     setUseVrf,
     setUseIncoPrivacy,
+    // Program instance for event listeners
+    program,
   };
 }

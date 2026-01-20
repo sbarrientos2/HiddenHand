@@ -31,14 +31,19 @@
 - Toggle button to enable/disable sounds
 - Files: `app/lib/sounds.ts`, `app/components/SoundToggle.tsx`, `app/public/sounds/`
 
+### Reveal Timeout at Showdown (COMPLETED)
+- `timeout_reveal` instruction mucks players who don't reveal within 3 minutes
+- Anyone can call it after timeout - prevents griefing/stalling
+- Mucked players forfeit their pot claim (standard poker rules)
+- Files: `programs/hiddenhand/src/instructions/timeout_reveal.rs`
+
 ### Program Deployed
 - **Network**: Devnet
 - **Program ID**: `HS3GdhRBU3jMT4G6ogKVktKaibqsMhPRhDhNsmgzeB8Q`
 
 ## What's Left
 
-1. **Add reveal timeout at showdown** - Prevent players from stalling by refusing to reveal cards
-2. **Create 3-minute demo video** - For hackathon submission
+1. **Create 3-minute demo video** - For hackathon submission
 
 ## Test Flow (Devnet)
 
@@ -67,3 +72,4 @@
 2. **Inco FHE Encryption** - Cards encrypted in TEE, only owner can decrypt
 3. **Ed25519 Verification** - Revealed cards must match Inco covalidator signatures
 4. **On-Chain Audit Trail** - All showdowns emit verifiable events
+5. **Timeout Protection** - Stalling players auto-muck after 3 minutes

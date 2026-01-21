@@ -129,6 +129,7 @@ pub fn handler(ctx: Context<StartHand>) -> Result<()> {
     hand_state.all_in_players = 0; // No one is all-in at start
     hand_state.last_action_time = clock.unix_timestamp;
     hand_state.hand_start_time = clock.unix_timestamp;
+    hand_state.awaiting_community_reveal = false;
     hand_state.bump = ctx.bumps.hand_state;
 
     // Initialize deck state

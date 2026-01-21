@@ -59,8 +59,10 @@ export interface HandStateAccount {
   activePlayers: number;
   actedThisRound: number;
   activeCount: number;
+  allInPlayers: number; // Bitmap of players who are all-in
   lastActionTime: BN;  // Unix timestamp (seconds)
   handStartTime: BN;   // Unix timestamp (seconds)
+  awaitingCommunityReveal: boolean; // Whether waiting for community card reveal
   bump: number;
 }
 
@@ -143,6 +145,9 @@ export interface GameState {
   encryptionHandNumber: number | null; // Hand number when encryption was detected (prevents cross-hand leakage)
   // Ed25519 attestation for card reveal verification
   ed25519Instructions: TransactionInstruction[]; // Stored from decryption for reveal verification
+  // Community card reveal state (privacy feature)
+  awaitingCommunityReveal: boolean; // Whether waiting for authority to reveal community cards
+  isRevealingCommunity: boolean; // Community card reveal in progress
 }
 
 export interface UsePokerGameResult {
@@ -178,6 +183,9 @@ export interface UsePokerGameResult {
   grantOwnAllowance: () => Promise<string>; // Self-grant allowance after 60s timeout
   timeoutReveal: (targetSeat: number) => Promise<string>; // Muck non-revealing player after 3 min
   closeInactiveTable: () => Promise<string>; // Close inactive table after 1 hour, return funds
+
+  // Community card reveal (privacy feature - authority only)
+  revealCommunityCards: () => Promise<string>; // Reveal encrypted community cards with Ed25519 verification
 
   // Utilities
   refreshState: () => Promise<void>;
@@ -241,6 +249,9 @@ const initialGameState: GameState = {
   isRevealing: false,
   encryptionHandNumber: null, // Track which hand encryption belongs to
   ed25519Instructions: [], // Ed25519 verification instructions for card reveal
+  // Community card reveal state
+  awaitingCommunityReveal: false,
+  isRevealingCommunity: false,
 };
 
 export function usePokerGame(): UsePokerGameResult {
@@ -251,6 +262,8 @@ export function usePokerGame(): UsePokerGameResult {
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
   // Ref to track encryptionHandNumber for stale closure prevention in refreshState
   const encryptionHandNumberRef = useRef<number | null>(null);
+  // Ref to prevent duplicate community reveal attempts (race condition prevention)
+  const communityRevealInProgressRef = useRef<boolean>(false);
 
   // Keep the ref in sync with gameState.encryptionHandNumber
   useEffect(() => {
@@ -596,6 +609,10 @@ export function usePokerGame(): UsePokerGameResult {
         encryptionHandNumber: resetEncryptionState ? null : (detectedCardsEncrypted ? currentHandNumber : prev.encryptionHandNumber),
         // Clear Ed25519 attestation instructions when hand changes (they're handle-specific)
         ed25519Instructions: resetEncryptionState ? [] : prev.ed25519Instructions,
+        // Community card reveal state (from on-chain HandState)
+        awaitingCommunityReveal: handState?.awaitingCommunityReveal ?? false,
+        // Reset reveal state when not awaiting
+        isRevealingCommunity: (handState?.awaitingCommunityReveal ?? false) ? prev.isRevealingCommunity : false,
       }));
 
       setError(null);
@@ -1468,6 +1485,216 @@ export function usePokerGame(): UsePokerGameResult {
   }, [program, provider, publicKey, gameState.tablePDA, gameState.table, gameState.currentPlayerSeat, gameState.decryptedCards, gameState.ed25519Instructions]);
 
   // ============================================================
+  // Community Card Reveal: Reveal encrypted community cards (authority only)
+  // Called automatically when awaitingCommunityReveal is true
+  // ============================================================
+  const revealCommunityCards = useCallback(async (): Promise<string> => {
+    // Use ref to prevent duplicate reveal attempts (race condition)
+    if (communityRevealInProgressRef.current) {
+      console.log("[Community Reveal] Already in progress, skipping duplicate attempt");
+      return ""; // Return empty string to indicate skipped
+    }
+
+    if (!program || !provider || !publicKey || !gameState.tablePDA || !gameState.table || !gameState.deckState || !gameState.handState) {
+      throw new Error("Not ready to reveal community cards");
+    }
+
+    if (!gameState.isAuthority) {
+      throw new Error("Only authority can reveal community cards");
+    }
+
+    if (!gameState.awaitingCommunityReveal) {
+      throw new Error("Not awaiting community reveal");
+    }
+
+    // Set ref immediately to prevent race conditions
+    communityRevealInProgressRef.current = true;
+    console.log("Starting community card reveal...");
+    setGameState((prev) => ({ ...prev, isRevealingCommunity: true }));
+
+    try {
+      const handNumber = BigInt(gameState.table.handNumber.toNumber());
+      const [handPDA] = getHandPDA(gameState.tablePDA, handNumber);
+      const [deckPDA] = getDeckPDA(gameState.tablePDA, handNumber);
+
+      // Determine which cards to reveal based on current phase
+      const phase = gameState.phase;
+
+      // Check if all players are all-in (no more betting possible)
+      // In this case, we reveal all remaining community cards at once
+      // Logic matches Rust can_anyone_bet(): active_players & !all_in_players >= 2
+      const activePlayers = gameState.handState.activePlayers ?? 0;
+      const allInPlayers = gameState.handState.allInPlayers ?? 0;
+      const canBetBitmap = activePlayers & ~allInPlayers;
+      // Count bits set (players who can still bet)
+      const playersWhoCanBet = canBetBitmap.toString(2).split('1').length - 1;
+      const allInRunout = playersWhoCanBet < 2;
+
+      console.log(`[Community Reveal] activePlayers=${activePlayers}, allInPlayers=${allInPlayers}, canBet=${playersWhoCanBet}, allInRunout=${allInRunout}`);
+
+      let startIdx: number;
+      let cardCount: number;
+
+      if (phase === "PreFlop") {
+        if (allInRunout) {
+          startIdx = 0;
+          cardCount = 5; // All 5 community cards
+        } else {
+          startIdx = 0;
+          cardCount = 3; // Flop: cards 0, 1, 2
+        }
+      } else if (phase === "Flop") {
+        if (allInRunout) {
+          startIdx = 3;
+          cardCount = 2; // Turn + River: cards 3, 4
+        } else {
+          startIdx = 3;
+          cardCount = 1; // Turn: card 3
+        }
+      } else if (phase === "Turn") {
+        startIdx = 4;
+        cardCount = 1; // River: card 4
+      } else {
+        throw new Error(`Invalid phase for community reveal: ${phase}`);
+      }
+
+      console.log(`Revealing ${cardCount} community card(s) starting at index ${startIdx} for phase ${phase}`);
+
+      // Get encrypted handles from deck state (cards 0-4 are community cards)
+      const handles: bigint[] = [];
+      for (let i = startIdx; i < startIdx + cardCount; i++) {
+        const handle = BigInt(gameState.deckState.cards[i].toString());
+        handles.push(handle);
+        console.log(`  Card ${i}: handle ${handle.toString()}`);
+      }
+
+      // Decrypt community cards with attestation (authority has allowance for all cards)
+      console.log("Decrypting community cards via Inco...");
+      const { decrypt } = await import("@inco/solana-sdk");
+      const handleStrings = handles.map((h) => h.toString(10));
+
+      // Authority uses their own wallet to decrypt
+      const result = await decrypt(handleStrings, {
+        address: publicKey,
+        signMessage: signMessage!,
+      });
+
+      // Parse decrypted values
+      const cardValues: number[] = result.plaintexts.map((pt: string) => parseInt(pt, 10));
+      console.log("Decrypted community cards:", cardValues);
+
+      // Validate card values
+      for (const card of cardValues) {
+        if (card < 0 || card > 51) {
+          throw new Error(`Invalid community card value: ${card}`);
+        }
+      }
+
+      // Get Ed25519 instructions for verification
+      const ed25519Ixs = result.ed25519Instructions || [];
+      if (ed25519Ixs.length !== cardCount) {
+        throw new Error(`Expected ${cardCount} Ed25519 instructions, got ${ed25519Ixs.length}`);
+      }
+
+      console.log(`Building reveal_community transaction with ${cardCount} Ed25519 verification instruction(s)`);
+
+      // Build reveal_community instruction
+      // Convert to Buffer for Anchor's Vec<u8> serialization
+      const cardsBuffer = Buffer.from(cardValues);
+      const revealIx = await program.methods
+        .revealCommunity(cardsBuffer)
+        .accounts({
+          authority: publicKey,
+          table: gameState.tablePDA,
+          handState: handPDA,
+          deckState: deckPDA,
+          instructionsSysvar: new PublicKey("Sysvar1nstructions1111111111111111111111111"),
+        })
+        .instruction();
+
+      // Build transaction: Ed25519 instructions first, then reveal_community
+      const tx = new Transaction();
+
+      // Add Ed25519 verification instructions
+      for (const ed25519Ix of ed25519Ixs) {
+        tx.add(ed25519Ix);
+      }
+
+      // Add reveal_community instruction last
+      tx.add(revealIx);
+
+      // Get latest blockhash and send
+      const { blockhash, lastValidBlockHeight } = await provider.connection.getLatestBlockhash();
+      tx.recentBlockhash = blockhash;
+      tx.feePayer = publicKey;
+
+      // Sign and send
+      const signedTx = await provider.wallet.signTransaction(tx);
+      const signature = await provider.connection.sendRawTransaction(signedTx.serialize());
+
+      // Wait for confirmation
+      await provider.connection.confirmTransaction({
+        signature,
+        blockhash,
+        lastValidBlockHeight,
+      }, "confirmed");
+
+      console.log("Community cards revealed on-chain:", signature);
+      communityRevealInProgressRef.current = false; // Reset ref on success
+      setGameState((prev) => ({
+        ...prev,
+        isRevealingCommunity: false,
+        awaitingCommunityReveal: false, // Will be updated by refresh anyway
+      }));
+
+      // Refresh state to get updated phase and community cards
+      await refreshState();
+      return signature;
+    } catch (e) {
+      console.error("Failed to reveal community cards:", e);
+      communityRevealInProgressRef.current = false; // Reset ref on error
+      setGameState((prev) => ({ ...prev, isRevealingCommunity: false }));
+      throw e;
+    }
+  }, [program, provider, publicKey, signMessage, gameState.tablePDA, gameState.table, gameState.deckState, gameState.handState, gameState.phase, gameState.isAuthority, gameState.awaitingCommunityReveal, refreshState]);
+
+  // ============================================================
+  // Auto-reveal community cards when authority sees awaitingCommunityReveal
+  // ============================================================
+  useEffect(() => {
+    // Only authority should auto-reveal
+    if (!gameState.isAuthority) return;
+
+    // Check if we're waiting for community reveal and not already revealing
+    // Also check ref to prevent duplicate attempts from useEffect re-runs
+    if (gameState.awaitingCommunityReveal && !gameState.isRevealingCommunity && !communityRevealInProgressRef.current) {
+      console.log("[Auto-reveal] Detected awaitingCommunityReveal, triggering reveal...");
+
+      // Small delay to ensure state is stable
+      const timeout = setTimeout(() => {
+        revealCommunityCards()
+          .then((sig) => {
+            if (sig) {
+              console.log("[Auto-reveal] Community cards revealed:", sig);
+            }
+          })
+          .catch((e) => {
+            // Don't show error if it's just a "not awaiting" error (race condition)
+            const errorMsg = e instanceof Error ? e.message : String(e);
+            if (!errorMsg.includes("Not awaiting") && !errorMsg.includes("CommunityNotReady")) {
+              console.error("[Auto-reveal] Failed to reveal community cards:", e);
+              setError(errorMsg);
+            } else {
+              console.log("[Auto-reveal] Reveal skipped (already completed)");
+            }
+          });
+      }, 500);
+
+      return () => clearTimeout(timeout);
+    }
+  }, [gameState.isAuthority, gameState.awaitingCommunityReveal, gameState.isRevealingCommunity, revealCommunityCards]);
+
+  // ============================================================
   // Game Liveness: Self-grant allowance after timeout
   // ============================================================
   const grantOwnAllowance = useCallback(async (): Promise<string> => {
@@ -1835,6 +2062,8 @@ export function usePokerGame(): UsePokerGameResult {
     grantOwnAllowance,
     timeoutReveal,
     closeInactiveTable,
+    // Community card reveal (privacy feature)
+    revealCommunityCards,
     // Utilities
     refreshState,
     setTableId,

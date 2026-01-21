@@ -133,4 +133,13 @@ pub enum HiddenHandError {
 
     #[msg("Cannot perform this action while hand is in progress")]
     HandInProgress,
+
+    #[msg("Waiting for community cards to be revealed - authority must call reveal_community")]
+    AwaitingCommunityReveal,
+
+    #[msg("Community cards not ready for reveal - betting round not complete")]
+    CommunityNotReady,
+
+    #[msg("Invalid community cards for current phase")]
+    InvalidCommunityCards,
 }

@@ -76,6 +76,10 @@ pub struct HandState {
     /// Timestamp when hand started (unix timestamp)
     pub hand_start_time: i64,
 
+    /// Whether we're waiting for authority to reveal community cards
+    /// Set to true when betting round completes and phase needs to advance
+    pub awaiting_community_reveal: bool,
+
     /// PDA bump
     pub bump: u8,
 }
@@ -98,6 +102,7 @@ impl HandState {
         1 +  // all_in_players
         8 +  // last_action_time (i64)
         8 +  // hand_start_time (i64)
+        1 +  // awaiting_community_reveal
         1;   // bump
 
     /// Check if player is still active in hand

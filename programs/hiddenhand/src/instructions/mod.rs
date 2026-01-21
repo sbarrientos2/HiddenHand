@@ -23,6 +23,9 @@ pub mod encrypt_hole_cards;
 // Reveal cards for showdown (with Ed25519 verification)
 pub mod reveal_cards;
 
+// Reveal community cards (flop/turn/river with Ed25519 verification)
+pub mod reveal_community;
+
 // Game liveness - prevent stuck games
 pub mod grant_own_allowance;
 pub mod timeout_reveal;
@@ -58,6 +61,8 @@ pub use timeout_player::*;
 pub use encrypt_hole_cards::*;
 #[allow(ambiguous_glob_reexports)]
 pub use reveal_cards::*;
+#[allow(ambiguous_glob_reexports)]
+pub use reveal_community::*;
 #[allow(ambiguous_glob_reexports)]
 pub use grant_own_allowance::*;
 #[allow(ambiguous_glob_reexports)]

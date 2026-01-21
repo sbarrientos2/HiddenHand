@@ -326,6 +326,7 @@ export default function Home() {
   // - It's their turn
   // - They're not all-in
   // - Game is in betting phase
+  // - Not waiting for community cards to be revealed
   const isPlayerTurn =
     currentPlayer &&
     currentPlayer.status === "playing" && // Not all-in or folded
@@ -334,7 +335,8 @@ export default function Home() {
     gameState.phase !== "Dealing" &&
     gameState.phase !== "Showdown" &&
     gameState.phase !== "Settled" &&
-    !allPlayersAllIn;
+    !allPlayersAllIn &&
+    !gameState.awaitingCommunityReveal; // Block actions while revealing community cards
 
   // Calculate action panel values (never negative)
   const toCall = Math.max(0, gameState.currentBet - (currentPlayer?.currentBet ?? 0));
@@ -1341,6 +1343,29 @@ export default function Home() {
               </div>
             )}
 
+            {/* Revealing community cards indicator */}
+            {gameState.awaitingCommunityReveal && gameState.tableStatus === "Playing" && (
+              <div className="max-w-md mx-auto glass border border-purple-500/30 rounded-2xl p-5 text-center">
+                <div className="flex items-center justify-center gap-3 mb-2">
+                  <div className="w-5 h-5 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" />
+                  <span className="text-purple-300 font-semibold">
+                    {gameState.phase === "PreFlop" ? "Revealing Flop..." :
+                     gameState.phase === "Flop" ? "Revealing Turn..." :
+                     gameState.phase === "Turn" ? "Revealing River..." :
+                     "Revealing cards..."}
+                  </span>
+                </div>
+                <p className="text-[var(--text-muted)] text-sm">
+                  Decrypting community cards with Inco FHE
+                </p>
+                {gameState.isRevealingCommunity && (
+                  <p className="text-purple-400 text-xs mt-2">
+                    Submitting verification to blockchain...
+                  </p>
+                )}
+              </div>
+            )}
+
             {/* Action panel */}
             {currentPlayer && gameState.tableStatus === "Playing" && (
               <div className="max-w-lg mx-auto space-y-4">
@@ -1357,7 +1382,8 @@ export default function Home() {
                 )}
 
                 {/* Opponent timer - shows when waiting for another player during betting */}
-                {!isPlayerTurn && isBettingPhase && gameState.lastActionTime && (
+                {/* Don't show when awaiting community reveal - no one should be acting */}
+                {!isPlayerTurn && isBettingPhase && gameState.lastActionTime && !gameState.awaitingCommunityReveal && (
                   <OpponentTimer
                     lastActionTime={gameState.lastActionTime}
                     actionOn={gameState.actionOn}

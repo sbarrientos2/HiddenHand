@@ -68,6 +68,12 @@ pub fn handler(ctx: Context<PlayerAction>, action: Action) -> Result<()> {
         HiddenHandError::InvalidPhase
     );
 
+    // Cannot act while waiting for community cards to be revealed
+    require!(
+        !hand_state.awaiting_community_reveal,
+        HiddenHandError::AwaitingCommunityReveal
+    );
+
     require!(
         hand_state.action_on == player_seat.seat_index,
         HiddenHandError::NotPlayersTurn
@@ -205,44 +211,21 @@ pub fn handler(ctx: Context<PlayerAction>, action: Action) -> Result<()> {
     Ok(())
 }
 
-fn advance_to_next_phase(hand_state: &mut HandState, deck_state: &DeckState, max_players: u8) -> Result<()> {
-    // Find first active player left of dealer for post-flop action
-    let first_to_act = get_first_active_left_of_dealer(hand_state, max_players);
+#[allow(clippy::too_many_arguments)]
+fn advance_to_next_phase(hand_state: &mut HandState, _deck_state: &DeckState, _max_players: u8) -> Result<()> {
+    // Community cards are now ENCRYPTED in deck_state
+    // We can't reveal them directly - authority must call reveal_community
+    // Set the flag to signal that we're waiting for community card reveal
 
     match hand_state.phase {
-        GamePhase::PreFlop => {
-            hand_state.phase = GamePhase::Flop;
-            hand_state.reset_betting_round();
-            // Reveal flop (3 cards) from deck_state
-            hand_state.community_cards[0] = (deck_state.cards[0] & 0xFF) as u8;
-            hand_state.community_cards[1] = (deck_state.cards[1] & 0xFF) as u8;
-            hand_state.community_cards[2] = (deck_state.cards[2] & 0xFF) as u8;
-            hand_state.community_revealed = 3;
-            hand_state.action_on = first_to_act;
-            msg!("Advancing to Flop - cards: {}, {}, {}",
-                hand_state.community_cards[0],
-                hand_state.community_cards[1],
-                hand_state.community_cards[2]);
-        }
-        GamePhase::Flop => {
-            hand_state.phase = GamePhase::Turn;
-            hand_state.reset_betting_round();
-            // Reveal turn (4th card)
-            hand_state.community_cards[3] = (deck_state.cards[3] & 0xFF) as u8;
-            hand_state.community_revealed = 4;
-            hand_state.action_on = first_to_act;
-            msg!("Advancing to Turn - card: {}", hand_state.community_cards[3]);
-        }
-        GamePhase::Turn => {
-            hand_state.phase = GamePhase::River;
-            hand_state.reset_betting_round();
-            // Reveal river (5th card)
-            hand_state.community_cards[4] = (deck_state.cards[4] & 0xFF) as u8;
-            hand_state.community_revealed = 5;
-            hand_state.action_on = first_to_act;
-            msg!("Advancing to River - card: {}", hand_state.community_cards[4]);
+        GamePhase::PreFlop | GamePhase::Flop | GamePhase::Turn => {
+            // Signal that we need community cards revealed before advancing
+            hand_state.awaiting_community_reveal = true;
+            msg!("Betting round complete - awaiting community card reveal from authority");
+            msg!("Authority must call reveal_community instruction");
         }
         GamePhase::River => {
+            // No community cards to reveal - go directly to showdown
             hand_state.phase = GamePhase::Showdown;
             msg!("Advancing to Showdown");
         }
@@ -250,31 +233,6 @@ fn advance_to_next_phase(hand_state: &mut HandState, deck_state: &DeckState, max
     }
 
     Ok(())
-}
-
-/// Find first active player to the left of dealer (for post-flop betting order)
-fn get_first_active_left_of_dealer(hand_state: &HandState, max_players: u8) -> u8 {
-    let dealer = hand_state.dealer_position;
-    let mut pos = (dealer + 1) % max_players;
-
-    for _ in 0..max_players {
-        if hand_state.is_player_active(pos) && !hand_state.is_player_all_in(pos) {
-            return pos;
-        }
-        pos = (pos + 1) % max_players;
-    }
-
-    // Fallback: return first active player even if all-in
-    pos = (dealer + 1) % max_players;
-    for _ in 0..max_players {
-        if hand_state.is_player_active(pos) {
-            return pos;
-        }
-        pos = (pos + 1) % max_players;
-    }
-
-    // Fallback (shouldn't happen with 2+ active players)
-    dealer
 }
 
 /// Find next player who needs to act (not folded, not all-in, hasn't acted this round)
@@ -291,50 +249,23 @@ fn find_next_player_who_can_act(hand_state: &HandState, after_seat: u8, max_play
     None
 }
 
-/// Run out all remaining community cards and advance to showdown
-fn run_out_to_showdown(hand_state: &mut HandState, deck_state: &DeckState) -> Result<()> {
-    // Reveal all remaining community cards
-    match hand_state.phase {
-        GamePhase::PreFlop => {
-            // Reveal flop
-            hand_state.community_cards[0] = (deck_state.cards[0] & 0xFF) as u8;
-            hand_state.community_cards[1] = (deck_state.cards[1] & 0xFF) as u8;
-            hand_state.community_cards[2] = (deck_state.cards[2] & 0xFF) as u8;
-            // Reveal turn
-            hand_state.community_cards[3] = (deck_state.cards[3] & 0xFF) as u8;
-            // Reveal river
-            hand_state.community_cards[4] = (deck_state.cards[4] & 0xFF) as u8;
-            hand_state.community_revealed = 5;
-            msg!("Running out: Flop {}, {}, {} | Turn {} | River {}",
-                hand_state.community_cards[0],
-                hand_state.community_cards[1],
-                hand_state.community_cards[2],
-                hand_state.community_cards[3],
-                hand_state.community_cards[4]);
-        }
-        GamePhase::Flop => {
-            // Reveal turn
-            hand_state.community_cards[3] = (deck_state.cards[3] & 0xFF) as u8;
-            // Reveal river
-            hand_state.community_cards[4] = (deck_state.cards[4] & 0xFF) as u8;
-            hand_state.community_revealed = 5;
-            msg!("Running out: Turn {} | River {}",
-                hand_state.community_cards[3],
-                hand_state.community_cards[4]);
-        }
-        GamePhase::Turn => {
-            // Reveal river
-            hand_state.community_cards[4] = (deck_state.cards[4] & 0xFF) as u8;
-            hand_state.community_revealed = 5;
-            msg!("Running out: River {}", hand_state.community_cards[4]);
-        }
-        GamePhase::River => {
-            // Already all revealed
-        }
-        _ => {}
+/// Signal that we need to run out all remaining community cards to showdown
+/// This happens when all remaining players are all-in (no more betting possible)
+fn run_out_to_showdown(hand_state: &mut HandState, _deck_state: &DeckState) -> Result<()> {
+    // Community cards are ENCRYPTED - authority must reveal them
+    // Set the awaiting flag. The reveal_community instruction will detect
+    // that all players are all-in and reveal all remaining cards at once.
+
+    if hand_state.phase == GamePhase::River {
+        // All community cards already revealed, go to showdown
+        hand_state.phase = GamePhase::Showdown;
+        msg!("Advancing to Showdown - all players all-in");
+    } else {
+        // Need to reveal remaining community cards
+        hand_state.awaiting_community_reveal = true;
+        msg!("All players all-in - awaiting community card reveal to run out to showdown");
+        msg!("Authority must call reveal_community instruction to reveal remaining cards");
     }
 
-    hand_state.phase = GamePhase::Showdown;
-    msg!("Advancing to Showdown - all players all-in");
     Ok(())
 }

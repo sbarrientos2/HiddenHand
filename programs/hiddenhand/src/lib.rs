@@ -174,11 +174,21 @@ pub mod hiddenhand {
         instructions::close_inactive_table::handler(ctx)
     }
 
-    // TODO: Add community card reveal instruction
-    // pub fn reveal_community(ctx: Context<RevealCommunity>, count: u8) -> Result<()> {
-    //     // Reveal flop (3), turn (1), or river (1)
-    //     // Grants allowances to all active players for community cards
-    // }
+    /// Reveal community cards (flop/turn/river) with Ed25519 signature verification
+    ///
+    /// Authority calls this when betting round completes and community cards need to be revealed.
+    /// Community cards are encrypted during VRF shuffle for privacy - this reveals them.
+    ///
+    /// The transaction must include Ed25519 verification instructions for each card from
+    /// Inco's attested decryption to prove the revealed values are correct.
+    ///
+    /// Card count depends on phase:
+    /// - PreFlop -> Flop: 3 cards (or 5 if all-in runout)
+    /// - Flop -> Turn: 1 card (or 2 if all-in runout)
+    /// - Turn -> River: 1 card
+    pub fn reveal_community(ctx: Context<RevealCommunity>, cards: Vec<u8>) -> Result<()> {
+        instructions::reveal_community::handler(ctx, cards)
+    }
 }
 
 /// Unit tests using LiteSVM for fast execution

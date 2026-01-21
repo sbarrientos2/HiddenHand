@@ -147,7 +147,7 @@ pub fn handler(ctx: Context<CallbackShuffle>, randomness: [u8; 32]) -> Result<()
         deck.swap(i, j);
     }
 
-    msg!("Deck shuffled. Now encrypting hole cards via Inco FHE...");
+    msg!("Deck shuffled. Now encrypting ALL cards (community + hole cards) via Inco FHE...");
 
     // ============================================================
     // ENCRYPT AND DEAL CARDS ATOMICALLY
@@ -169,6 +169,23 @@ pub fn handler(ctx: Context<CallbackShuffle>, randomness: [u8; 32]) -> Result<()
     let mut active_players = initial_active_players;
     let mut active_count = 0u8;
     let mut total_blinds_posted = 0u64;
+
+    // ============================================================
+    // ENCRYPT COMMUNITY CARDS (cards 0-4) - PRIVACY FIX
+    // These are encrypted so no one can read them before reveal
+    // ============================================================
+    msg!("Encrypting 5 community cards...");
+    let mut encrypted_community: [u128; 5] = [0; 5];
+    for i in 0..5 {
+        let encrypted = inco_cpi::encrypt_card_with_pda(
+            &deck_state_info,
+            deck_seeds,
+            deck[i],
+        )?;
+        encrypted_community[i] = encrypted.unwrap();
+        msg!("Community card {} encrypted: handle {}", i, encrypted_community[i]);
+    }
+    msg!("All 5 community cards encrypted!");
 
     // Helper to check if seat is occupied using bitmask
     let is_seat_occupied = |seat: u8| -> bool {
@@ -302,9 +319,10 @@ pub fn handler(ctx: Context<CallbackShuffle>, randomness: [u8; 32]) -> Result<()
     let deck_state = &mut ctx.accounts.deck_state;
     let hand_state = &mut ctx.accounts.hand_state;
 
-    // Store community cards (first 5 cards as plaintext indices)
+    // Store ENCRYPTED community cards (first 5 slots)
+    // These can only be decrypted by authority when revealing flop/turn/river
     for i in 0..5 {
-        deck_state.cards[i] = deck[i] as u128;
+        deck_state.cards[i] = encrypted_community[i];
     }
 
     // Store encrypted hole cards
@@ -361,7 +379,9 @@ pub fn handler(ctx: Context<CallbackShuffle>, randomness: [u8; 32]) -> Result<()
         active_count
     );
     msg!("SECURITY: VRF seed was NEVER stored - only used in memory!");
-    msg!("IMPORTANT: Call grant_card_allowance for each player to enable decryption");
+    msg!("SECURITY: Community cards are ENCRYPTED - cannot be read until reveal!");
+    msg!("IMPORTANT: Call grant_card_allowance for each player to enable hole card decryption");
+    msg!("IMPORTANT: Authority must call reveal_community to show flop/turn/river");
 
     Ok(())
 }

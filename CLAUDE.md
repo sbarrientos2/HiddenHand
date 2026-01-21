@@ -11,16 +11,15 @@ This project was started for the **Solana Privacy Hack** hackathon (Jan 12-30, 2
    - Exciting demo potential
    - Targets MagicBlock ($5K) + Open Track ($18K) = $23K bounty potential
 
-2. **Privacy Approach**: Hybrid **MagicBlock + Inco** for ultimate privacy:
-   - **Phase 1 (Done):** MagicBlock VRF + Ephemeral Rollups
-     - **VRF**: Provably fair card shuffling
-     - **ER**: Fast gameplay (10ms latency), TEE-protected shuffle
-   - **Phase 2 (Done):** Inco FHE encryption via Magic Actions
-     - **Inco CPI**: Cards encrypted with FHE after shuffle
-     - **Allowances**: Only card owner can decrypt
-     - **Cryptographic guarantee**: Breaking requires SGX compromise, not chain reading
+2. **Privacy Approach**: Hybrid **MagicBlock VRF + Inco FHE** for ultimate privacy:
+   - **MagicBlock VRF**: Provably fair card shuffling with verifiable randomness
+   - **Inco FHE**: Fully Homomorphic Encryption for card privacy
+     - Cards encrypted as u128 handles on-chain
+     - Only card owner can decrypt (via allowances)
+     - Ed25519 signature verification for reveals
+     - **Cryptographic guarantee**: Cards are ALWAYS encrypted, even during computation
 
-3. **Version Conflict (Resolved)**: Inco SDK needs Anchor 0.31.1, ER SDK needs 0.32.1. Solved by manual Inco CPI construction (see `src/inco_cpi.rs`).
+3. **Manual Inco CPI**: Built custom CPI module (`src/inco_cpi.rs`) for Inco integration to avoid SDK version conflicts.
 
 ### What's Built
 - Full poker game state machine (7 phases)
@@ -208,13 +207,14 @@ cd app && npm run dev
 
 ## Key Resources
 
-### MagicBlock (Primary Privacy Stack)
+### MagicBlock VRF (Provably Fair Shuffling)
 - [MagicBlock Docs](https://docs.magicblock.gg/)
-- [Ephemeral Rollups SDK](https://crates.io/crates/ephemeral-rollups-sdk)
 - [VRF SDK](https://crates.io/crates/ephemeral-vrf-sdk)
-- [MagicBlock DevNet](https://devnet.magicblock.app/)
 - [Example: Roll Dice](https://github.com/magicblock-labs/roll-dice) - VRF pattern
-- [Example: Private Payments](https://github.com/magicblock-labs/private-payments-demo) - PER pattern
+
+### Inco FHE (Card Encryption)
+- [Inco Network](https://inco.org/)
+- [Inco Solana SDK](https://www.npmjs.com/package/@inco/solana-sdk)
 
 ### Hackathon
 - [Hackathon Page](https://solana.com/privacyhack)

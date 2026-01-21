@@ -45,10 +45,10 @@ Built on Solana with Inco Lightning's confidential computing, your hole cards ar
 
 When you sit down at a HiddenHand table:
 
-1. Cards are shuffled using **cryptographic randomness** inside a secure enclave
-2. Your hole cards are encrypted to **your key only**
+1. Cards are shuffled using **MagicBlock VRF** - verifiable random function, provably fair
+2. Your hole cards are encrypted with **Inco FHE** - only you can decrypt them
 3. The game state lives on Solana - transparent, immutable, auditable
-4. At showdown, cards are revealed through **zero-knowledge proofs**
+4. At showdown, cards are revealed with **Ed25519 cryptographic verification**
 
 The result? A poker game that's **provably fair by design**, not by promise.
 

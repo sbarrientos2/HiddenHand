@@ -872,21 +872,21 @@ export default function Home() {
                           )
                         )}
 
-                        {/* Deal Cards - VRF Flow */}
+                        {/* Deal Cards - VRF Flow (Streamlined: Shuffle + Encrypt + Grant in one click) */}
                         {gameState.phase === "Dealing" && gameState.useVrf && (
                           canStart ? (
                             <>
-                              {/* Step 1: Request VRF Shuffle */}
+                              {/* Deal Cards - Single button that does everything */}
                               {!gameState.isDeckShuffled && !gameState.isShuffling && (
                                 <Tooltip
-                                  title="🎲 Provably Fair Shuffle"
-                                  content="MagicBlock oracle generates verifiable randomness. Dealer cannot manipulate the card order."
+                                  title="🎲 Deal Cards"
+                                  content="Shuffles deck with MagicBlock VRF (provably fair), encrypts cards with Inco FHE (cryptographic privacy), and grants decryption access to all players. One click does it all!"
                                 >
                                   <button
                                     onClick={() => withToast(
                                       () => requestShuffle(),
-                                      "Requesting VRF shuffle...",
-                                      "Deck shuffled (VRF)"
+                                      "Dealing cards...",
+                                      "Cards dealt - ready to play!"
                                     )}
                                     disabled={loading}
                                     className="btn-gold px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50 flex items-center gap-2"
@@ -894,34 +894,26 @@ export default function Home() {
                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                                     </svg>
-                                    Shuffle (VRF)
+                                    Deal Cards
                                     <InfoIcon />
                                   </button>
                                 </Tooltip>
                               )}
-                              {/* Shuffling in progress */}
+                              {/* Dealing in progress - shows current step */}
                               {gameState.isShuffling && (
                                 <div className="flex items-center gap-2 text-purple-400 text-sm">
                                   <div className="animate-spin h-4 w-4 border-2 border-purple-400/30 border-t-purple-400 rounded-full" />
-                                  VRF shuffling...
+                                  {!gameState.areCardsEncrypted ? "Shuffling & encrypting..." : "Granting allowances..."}
                                 </div>
                               )}
-                              {/* Deal Cards after shuffle */}
-                              {gameState.isDeckShuffled && (
-                                <button
-                                  onClick={() => withToast(
-                                    () => dealCardsVrf(),
-                                    "Dealing VRF cards...",
-                                    "Cards dealt (VRF)"
-                                  )}
-                                  disabled={loading}
-                                  className="btn-success px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50 flex items-center gap-2"
-                                >
+                              {/* Cards ready - game can begin */}
+                              {gameState.isDeckShuffled && gameState.allPlayersHaveAllowances && (
+                                <div className="flex items-center gap-2 text-green-400 text-sm">
                                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                                   </svg>
-                                  Deal Cards
-                                </button>
+                                  Cards dealt - click Decrypt to see your hand
+                                </div>
                               )}
                             </>
                           ) : (
@@ -988,31 +980,16 @@ export default function Home() {
                             <span className="text-cyan-400 text-xs font-medium">FHE Encrypted</span>
                           </div>
                         )}
-                        {/* Grant Allowances button - for atomic encryption where cards are encrypted but allowances need to be granted */}
-                        {/* Uses allPlayersHaveAllowances to show button until ALL players have allowances, not just authority */}
-                        {gameState.isAuthority && gameState.areCardsEncrypted && !gameState.allPlayersHaveAllowances && !gameState.isEncrypting && (
-                          <Tooltip
-                            title="🔑 Grant Decryption Access"
-                            content="Cards are encrypted with Inco FHE. Click to grant all players permission to decrypt their own cards. No one can see their cards until you do this."
-                          >
-                            <button
-                              onClick={async () => {
-                                try {
-                                  await grantAllPlayersAllowances();
-                                  addGameEvent("privacy", "Decryption allowances granted for all players");
-                                } catch (e) {
-                                  console.error("Failed to grant allowances:", e);
-                                }
-                              }}
-                              disabled={loading}
-                              className="btn-info px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50 flex items-center gap-2"
-                            >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-                              </svg>
-                              Grant Allowances
-                            </button>
-                          </Tooltip>
+                        {/* Grant Allowances - now auto-granted after VRF shuffle completes */}
+                        {/* This indicator shows while auto-grant is in progress */}
+                        {gameState.isAuthority && gameState.areCardsEncrypted && !gameState.allPlayersHaveAllowances && gameState.isShuffling && (
+                          <div className="flex items-center gap-2 glass-dark px-3 py-1.5 rounded-lg border border-blue-500/30">
+                            <svg className="animate-spin w-4 h-4 text-blue-400" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            <span className="text-blue-400 text-xs font-medium">Granting allowances...</span>
+                          </div>
                         )}
                         {/* Self-grant allowance button - for non-authority after timeout */}
                         {gameState.areCardsEncrypted && !gameState.areAllowancesGranted && !gameState.isAuthority && !gameState.isEncrypting &&

@@ -987,7 +987,76 @@ export function usePokerGame(): UsePokerGameResult {
       if (shuffled) {
         console.log("ATOMIC shuffle + encrypt completed! Cards are now encrypted.");
         console.log("SECURITY: VRF seed was NEVER stored - only used in callback memory!");
-        setGameState((prev) => ({ ...prev, isShuffling: false, isDeckShuffled: true }));
+
+        // ============================================================
+        // AUTO-GRANT ALLOWANCES: Streamlined UX
+        // After shuffle completes, automatically grant allowances to all players
+        // This removes the manual "Grant Allowances" button click
+        // ============================================================
+        console.log("Auto-granting decryption allowances for all players...");
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const accounts = program.account as any;
+
+        // Grant allowances for each occupied seat
+        for (const seatIndex of occupied) {
+          try {
+            const [seatPDA] = getSeatPDA(gameState.tablePDA!, seatIndex);
+            const seat = await accounts.playerSeat.fetch(seatPDA) as PlayerSeatAccount;
+
+            const handle1 = BigInt(seat.holeCard1.toString());
+            const handle2 = BigInt(seat.holeCard2.toString());
+
+            // Verify cards are encrypted (handles > 255)
+            if (handle1 <= BigInt(255) || handle2 <= BigInt(255)) {
+              console.log(`Seat ${seatIndex}: Cards not encrypted yet, skipping`);
+              continue;
+            }
+
+            // Derive allowance PDAs from the encrypted handles
+            const [allowancePDA1] = getAllowancePDA(handle1, seat.player);
+            const [allowancePDA2] = getAllowancePDA(handle2, seat.player);
+
+            console.log(`Granting allowances for seat ${seatIndex}...`);
+
+            const grantTx = await program.methods
+              .grantCardAllowance(seatIndex)
+              .accounts({
+                authority: publicKey,
+                table: gameState.tablePDA,
+                playerSeat: seatPDA,
+                allowanceCard1: allowancePDA1,
+                allowanceCard2: allowancePDA2,
+                player: seat.player,
+                incoProgram: INCO_PROGRAM_ID,
+                systemProgram: SystemProgram.programId,
+              })
+              .rpc();
+
+            await provider.connection.confirmTransaction(grantTx, "confirmed");
+            console.log(`Allowances granted for seat ${seatIndex}:`, grantTx);
+
+            // Small delay between grants to avoid rate limiting
+            await new Promise(resolve => setTimeout(resolve, 300));
+          } catch (e) {
+            console.error(`Failed to grant allowance for seat ${seatIndex}:`, e);
+            // Continue with other seats even if one fails
+          }
+        }
+
+        console.log("All allowances granted! Players can now decrypt their cards.");
+
+        // Update state to reflect completed shuffle AND allowances
+        const currentHandNumber = gameState.table!.handNumber.toNumber();
+        setGameState((prev) => ({
+          ...prev,
+          isShuffling: false,
+          isDeckShuffled: true,
+          areCardsEncrypted: true,
+          areAllowancesGranted: true,
+          allPlayersHaveAllowances: true,
+          encryptionHandNumber: currentHandNumber,
+        }));
       } else {
         console.warn("VRF shuffle timed out");
         setGameState((prev) => ({ ...prev, isShuffling: false }));

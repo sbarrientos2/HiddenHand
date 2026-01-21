@@ -1635,7 +1635,16 @@ export default function Home() {
             target="_blank"
             rel="noopener noreferrer"
           >
-            MagicBlock
+            MagicBlock VRF
+          </a>
+          {" "}&{" "}
+          <a
+            href="https://inco.org"
+            className="text-cyan-400 hover:text-cyan-300 transition-colors"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Inco FHE
           </a>
         </p>
       </footer>

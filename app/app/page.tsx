@@ -535,69 +535,169 @@ export default function Home() {
       <div className="container mx-auto px-4 py-8 pb-32">
         {!connected ? (
           /* Landing Page */
-          <div className="text-center py-16">
+          <div className="relative min-h-[80vh] flex flex-col items-center justify-center py-16 overflow-hidden">
+            {/* Floating Cards Background */}
+            <div className="absolute inset-0 pointer-events-none overflow-hidden">
+              {/* Card 1 - Top Left */}
+              <div
+                className="floating-card animate-float-card"
+                style={{
+                  top: '10%',
+                  left: '8%',
+                  '--rotate-start': '-15deg',
+                  '--rotate-end': '-12deg',
+                  animationDelay: '0s',
+                } as React.CSSProperties}
+              />
+              {/* Card 2 - Top Right */}
+              <div
+                className="floating-card hearts animate-float-card"
+                style={{
+                  top: '15%',
+                  right: '12%',
+                  '--rotate-start': '20deg',
+                  '--rotate-end': '25deg',
+                  animationDelay: '1s',
+                } as React.CSSProperties}
+              />
+              {/* Card 3 - Bottom Left */}
+              <div
+                className="floating-card diamonds animate-float-card"
+                style={{
+                  bottom: '20%',
+                  left: '5%',
+                  '--rotate-start': '-8deg',
+                  '--rotate-end': '-5deg',
+                  animationDelay: '2s',
+                } as React.CSSProperties}
+              />
+              {/* Card 4 - Bottom Right */}
+              <div
+                className="floating-card clubs animate-float-card"
+                style={{
+                  bottom: '25%',
+                  right: '8%',
+                  '--rotate-start': '12deg',
+                  '--rotate-end': '18deg',
+                  animationDelay: '0.5s',
+                } as React.CSSProperties}
+              />
+              {/* Card 5 - Mid Left */}
+              <div
+                className="floating-card animate-float-card"
+                style={{
+                  top: '45%',
+                  left: '3%',
+                  '--rotate-start': '25deg',
+                  '--rotate-end': '30deg',
+                  animationDelay: '1.5s',
+                  opacity: 0.4,
+                } as React.CSSProperties}
+              />
+              {/* Card 6 - Mid Right */}
+              <div
+                className="floating-card hearts animate-float-card"
+                style={{
+                  top: '50%',
+                  right: '3%',
+                  '--rotate-start': '-20deg',
+                  '--rotate-end': '-15deg',
+                  animationDelay: '2.5s',
+                  opacity: 0.4,
+                } as React.CSSProperties}
+              />
+            </div>
+
             {/* Hero */}
-            <div className="max-w-3xl mx-auto mb-16">
-              <h2 className="font-display text-5xl md:text-6xl font-bold text-[var(--text-primary)] mb-6 leading-tight">
-                Privacy Poker
+            <div className="relative z-10 max-w-3xl mx-auto mb-20 text-center">
+              <div className="animate-fade-in-up" style={{ animationDelay: '0.1s' }}>
+                <p className="text-[var(--gold-main)] font-medium tracking-[0.3em] uppercase text-sm mb-6">
+                  Solana Privacy Poker
+                </p>
+              </div>
+
+              <h2
+                className="font-display text-5xl md:text-7xl font-bold text-[var(--text-primary)] mb-8 leading-[1.1] animate-fade-in-up"
+                style={{ animationDelay: '0.2s', opacity: 0, animationFillMode: 'forwards' }}
+              >
+                Don&apos;t Trust
                 <br />
-                <span className="text-gold-gradient">on Solana</span>
+                <span className="text-gold-gradient animate-glow-pulse inline-block">
+                  the Dealer
+                </span>
               </h2>
-              <p className="text-xl text-[var(--text-secondary)] mb-10 leading-relaxed">
+
+              <p
+                className="text-xl md:text-2xl text-[var(--text-secondary)] mb-12 leading-relaxed animate-fade-in-up max-w-xl mx-auto"
+                style={{ animationDelay: '0.4s', opacity: 0, animationFillMode: 'forwards' }}
+              >
                 The only poker game where the house can&apos;t see your cards.
-                <br />
-                Encrypted. On-chain. Provably fair.
+                <span className="block mt-2 text-[var(--text-muted)] text-lg">
+                  Encrypted. On-chain. Provably fair.
+                </span>
               </p>
-              <WalletButton className="btn-gold !text-lg !px-10 !py-4 !rounded-xl !font-bold" />
+
+              <div
+                className="animate-fade-in-up"
+                style={{ animationDelay: '0.6s', opacity: 0, animationFillMode: 'forwards' }}
+              >
+                <WalletButton className="btn-gold !text-lg !px-12 !py-4 !rounded-xl !font-bold" />
+              </div>
             </div>
 
             {/* Features */}
-            <div className="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto">
+            <div
+              className="relative z-10 grid md:grid-cols-3 gap-6 max-w-4xl mx-auto w-full animate-fade-in-up"
+              style={{ animationDelay: '0.8s', opacity: 0, animationFillMode: 'forwards' }}
+            >
               {[
                 {
                   icon: (
-                    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                     </svg>
                   ),
-                  title: "Encrypted Cards",
-                  desc: "Your hole cards are encrypted. Only you can see them.",
+                  title: "FHE Encryption",
+                  desc: "Hole cards encrypted with Inco Lightning. Only you can decrypt them.",
                 },
                 {
                   icon: (
-                    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+                    <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                     </svg>
                   ),
-                  title: "Fully On-Chain",
-                  desc: "Every action is recorded on Solana. Provably fair.",
+                  title: "Verified Fair",
+                  desc: "MagicBlock VRF ensures provably random shuffles. No rigged decks.",
                 },
                 {
                   icon: (
-                    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                    <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
                     </svg>
                   ),
-                  title: "Texas Hold'em",
-                  desc: "Classic 6-max poker with blinds and all-in action.",
+                  title: "On Solana",
+                  desc: "Sub-second transactions. Every bet, fold, and showdown on-chain.",
                 },
               ].map((feature, idx) => (
                 <div
                   key={idx}
-                  className="glass p-6 rounded-2xl hover:border-[var(--gold-main)]/30 transition-all group"
+                  className="glass p-6 rounded-2xl hover:border-[var(--gold-main)]/40 transition-all duration-300 group hover:-translate-y-1"
                 >
-                  <div className="w-14 h-14 rounded-xl bg-[var(--felt-dark)] flex items-center justify-center text-[var(--gold-main)] mb-4 mx-auto group-hover:scale-110 transition-transform">
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[var(--felt-main)] to-[var(--felt-dark)] flex items-center justify-center text-[var(--gold-main)] mb-4 group-hover:scale-110 transition-transform duration-300 shadow-lg">
                     {feature.icon}
                   </div>
-                  <h3 className="font-display text-lg font-bold text-[var(--text-primary)] mb-2">
+                  <h3 className="font-display text-base font-bold text-[var(--text-primary)] mb-2 tracking-wide">
                     {feature.title}
                   </h3>
-                  <p className="text-[var(--text-secondary)] text-sm">
+                  <p className="text-[var(--text-secondary)] text-sm leading-relaxed">
                     {feature.desc}
                   </p>
                 </div>
               ))}
             </div>
+
+            {/* Subtle gradient overlay at bottom */}
+            <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-[var(--bg-deep)] to-transparent pointer-events-none" />
           </div>
         ) : (
           /* Game Interface */

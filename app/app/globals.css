@@ -165,6 +165,35 @@
   50% { transform: translateY(-4px); }
 }
 
+@keyframes float-card {
+  0%, 100% {
+    transform: translateY(0) rotate(var(--rotate-start, 12deg));
+  }
+  50% {
+    transform: translateY(-20px) rotate(var(--rotate-end, 15deg));
+  }
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes glow-pulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 20px rgba(212, 160, 18, 0.3));
+  }
+  50% {
+    filter: drop-shadow(0 0 40px rgba(212, 160, 18, 0.6));
+  }
+}
+
 @keyframes deal-card {
   0% {
     opacity: 0;
@@ -340,4 +369,51 @@
   .animate-turn {
     animation: turn-pulse 1.5s ease-in-out infinite;
   }
+
+  .animate-float-card {
+    animation: float-card 6s ease-in-out infinite;
+  }
+
+  .animate-fade-in-up {
+    animation: fade-in-up 0.8s ease-out forwards;
+  }
+
+  .animate-glow-pulse {
+    animation: glow-pulse 3s ease-in-out infinite;
+  }
+
+  /* Landing page floating cards */
+  .floating-card {
+    position: absolute;
+    width: 60px;
+    height: 84px;
+    border-radius: 6px;
+    background: linear-gradient(135deg, #1a365d 0%, #0d1b2a 100%);
+    border: 1px solid rgba(255,255,255,0.15);
+    box-shadow: 0 10px 40px rgba(0,0,0,0.4);
+    opacity: 0.6;
+    pointer-events: none;
+  }
+
+  .floating-card::before {
+    content: '';
+    position: absolute;
+    inset: 4px;
+    border: 1px solid rgba(212, 160, 18, 0.3);
+    border-radius: 4px;
+  }
+
+  .floating-card::after {
+    content: '♠';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 20px;
+    color: rgba(212, 160, 18, 0.4);
+  }
+
+  .floating-card.hearts::after { content: '♥'; color: rgba(220, 80, 80, 0.4); }
+  .floating-card.diamonds::after { content: '♦'; color: rgba(220, 80, 80, 0.4); }
+  .floating-card.clubs::after { content: '♣'; }
 }

@@ -36,6 +36,21 @@ This project was started for the **Solana Privacy Hack** hackathon (Jan 12-30, 2
 - **Ed25519 Signature Verification** - Secure card reveals at showdown
 - **Complete Next.js Frontend** - Playable poker UI with wallet integration
 - **Client-side Decryption** - Players decrypt their own cards via Inco SDK
+- **Authority AFK Recovery** - Non-authority players can continue game after 60s timeout
+
+### Game Liveness (AFK Recovery)
+
+The game includes robust timeout mechanisms to prevent games from getting stuck if a player or the table authority goes AFK:
+
+1. **Player Action Timeout** (`timeout_player`): Force fold inactive players after timeout
+2. **Showdown Reveal Timeout** (`timeout_reveal`): Auto-fold players who don't reveal cards at showdown
+3. **Community Card Reveal Timeout** (`reveal_community`): Any player can reveal community cards after 60s if authority is AFK
+4. **Community Card Allowances** (`grant_community_allowances`): All players receive decryption access for community cards after VRF shuffle
+
+**Technical Details:**
+- Timeout checks use Solana cluster time (not local time) to avoid clock synchronization issues
+- 60-second timeout constant: `ALLOWANCE_TIMEOUT_SECONDS` in `constants.rs`
+- Frontend uses `getBlockTime()` RPC call for accurate timeout validation
 
 ### What's Next
 1. ~~Write tests for current poker logic~~ Done
@@ -99,7 +114,7 @@ Dealing → PreFlop → Flop → Turn → River → Showdown → Settled
 - **Deck State**: `["deck", table_pubkey, hand_number]`
 - **Vault**: `["vault", table_pubkey]`
 
-## Current Instructions (18 total)
+## Current Instructions (19 total)
 
 ### Core Game Instructions
 
@@ -129,6 +144,7 @@ Dealing → PreFlop → Flop → Turn → River → Showdown → Settled
 | `encrypt_hole_cards` | Encrypt dealt cards for a player | Done |
 | `grant_card_allowance` | Authority grants decryption allowance | Done |
 | `grant_own_allowance` | Player grants own allowance via signing | Done |
+| `grant_community_allowances` | Grant community card access to all players | Done |
 | `reveal_cards` | Reveal cards at showdown (Ed25519 verified) | Done |
 
 ### Timeout & Recovery Instructions
@@ -145,7 +161,7 @@ Dealing → PreFlop → Flop → Turn → River → Showdown → Settled
 hiddenhand/
 ├── programs/
 │   └── hiddenhand/src/           # Main poker program
-│       ├── lib.rs                # Program entry (18 instructions)
+│       ├── lib.rs                # Program entry (19 instructions)
 │       ├── constants.rs          # PDA seeds, game constants
 │       ├── error.rs              # 30+ custom errors
 │       ├── inco_cpi.rs           # Manual Inco CPI (no SDK)
@@ -172,7 +188,8 @@ hiddenhand/
 │           ├── request_shuffle.rs      # VRF randomness request
 │           ├── callback_shuffle.rs     # VRF callback, stores seed
 │           ├── encrypt_hole_cards.rs   # Inco FHE encryption
-│           └── grant_own_allowance.rs  # Player grants decryption access
+│           ├── grant_own_allowance.rs  # Player grants decryption access
+│           └── grant_community_allowances.rs  # Community card access for AFK recovery
 ├── app/                          # Next.js frontend (complete)
 │   ├── app/page.tsx             # Main game UI
 │   ├── components/              # UI components

@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 
 use crate::constants::*;
 use crate::error::HiddenHandError;
-use crate::state::{DeckState, GamePhase, HandState, PlayerSeat, PlayerStatus, Table, TableStatus};
+use crate::state::{DeckState, GamePhase, HandState, Table, TableStatus};
 
 #[derive(Accounts)]
 pub struct StartHand<'info> {
@@ -150,74 +150,6 @@ pub fn handler(ctx: Context<StartHand>) -> Result<()> {
         sb_pos,
         bb_pos,
         action_pos
-    );
-
-    Ok(())
-}
-
-/// Context for dealing cards to a player
-/// This would use Inco CPI to deal encrypted cards
-#[derive(Accounts)]
-pub struct DealCards<'info> {
-    #[account(mut)]
-    pub authority: Signer<'info>,
-
-    #[account(
-        seeds = [TABLE_SEED, table.table_id.as_ref()],
-        bump = table.bump
-    )]
-    pub table: Account<'info, Table>,
-
-    #[account(
-        mut,
-        seeds = [HAND_SEED, table.key().as_ref(), &table.hand_number.to_le_bytes()],
-        bump = hand_state.bump
-    )]
-    pub hand_state: Account<'info, HandState>,
-
-    #[account(
-        mut,
-        seeds = [DECK_SEED, table.key().as_ref(), &table.hand_number.to_le_bytes()],
-        bump = deck_state.bump
-    )]
-    pub deck_state: Account<'info, DeckState>,
-
-    #[account(
-        mut,
-        seeds = [SEAT_SEED, table.key().as_ref(), &[player_seat.seat_index]],
-        bump = player_seat.bump
-    )]
-    pub player_seat: Account<'info, PlayerSeat>,
-
-    // TODO: Add Inco Lightning program for CPI
-    // pub inco_program: Program<'info, IncoLightning>,
-}
-
-/// Deal encrypted hole cards to a player
-/// NOTE: This is a placeholder. Real implementation uses Inco CPI
-pub fn deal_cards_handler(ctx: Context<DealCards>) -> Result<()> {
-    let hand_state = &ctx.accounts.hand_state;
-    let deck_state = &mut ctx.accounts.deck_state;
-    let player_seat = &mut ctx.accounts.player_seat;
-
-    require!(
-        hand_state.phase == GamePhase::Dealing,
-        HiddenHandError::InvalidPhase
-    );
-
-    // Deal two cards to player
-    // In real implementation, these would come from Inco encrypted shuffle
-    let card1 = deck_state.deal_card().ok_or(HiddenHandError::InvalidCardIndex)?;
-    let card2 = deck_state.deal_card().ok_or(HiddenHandError::InvalidCardIndex)?;
-
-    player_seat.hole_card_1 = card1;
-    player_seat.hole_card_2 = card2;
-    player_seat.status = PlayerStatus::Playing;
-    player_seat.reset_for_new_hand();
-
-    msg!(
-        "Dealt cards to player at seat {}",
-        player_seat.seat_index
     );
 
     Ok(())

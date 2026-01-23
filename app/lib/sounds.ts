@@ -25,10 +25,10 @@ const SOUND_URLS: Record<SoundName, string> = {
   chipWin: '/sounds/chip-win.mp3',
   fold: '/sounds/fold.mp3',
   check: '/sounds/check.mp3',
-  allIn: '/sounds/all-in.mp3',
-  yourTurn: '/sounds/your-turn.mp3',
+  allIn: '/sounds/allin-sound.mp3',
+  yourTurn: '/sounds/bell-ring-your-turn.mp3',
   timerWarning: '/sounds/timer-warning.mp3',
-  shuffle: '/sounds/shuffle.mp3',
+  shuffle: '/sounds/riffle-shuffle.mp3',
 };
 
 // Volume levels for different sounds (0.0 to 1.0)

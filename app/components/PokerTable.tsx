@@ -3,6 +3,7 @@
 import { FC } from "react";
 import { PlayerSeat } from "./PlayerSeat";
 import { CardHand } from "./Card";
+import { ProvablyFairBadge } from "./ProvablyFairBadge";
 
 interface Player {
   seatIndex: number;
@@ -28,6 +29,7 @@ interface PokerTableProps {
   smallBlind: number;
   bigBlind: number;
   isShowdownPhase?: boolean;
+  isVrfVerified?: boolean; // VRF shuffle has completed
 }
 
 // Seat positions around the table (for 6-max)
@@ -54,6 +56,7 @@ export const PokerTable: FC<PokerTableProps> = ({
   smallBlind,
   bigBlind,
   isShowdownPhase = false,
+  isVrfVerified = false,
 }) => {
   // Calculate SB and BB positions
   const occupiedSeats = players
@@ -217,7 +220,7 @@ export const PokerTable: FC<PokerTableProps> = ({
           </div>
 
           {/* Phase indicator */}
-          <div className="mt-5 flex items-center gap-4">
+          <div className="mt-5 flex items-center gap-3">
             <div
               className={`
                 px-5 py-2 rounded-full uppercase tracking-widest text-sm font-semibold
@@ -229,6 +232,7 @@ export const PokerTable: FC<PokerTableProps> = ({
             >
               {phase}
             </div>
+            <ProvablyFairBadge isActive={isVrfVerified} />
           </div>
 
           {/* Blinds info */}

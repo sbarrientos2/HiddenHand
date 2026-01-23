@@ -20,6 +20,7 @@ import { SoundToggle } from "@/components/SoundToggle";
 import { useHandHistory } from "@/hooks/useHandHistory";
 import { OnChainHandHistory } from "@/components/OnChainHandHistory";
 import { Tooltip, InfoIcon } from "@/components/Tooltip";
+import { WinCelebration } from "@/components/WinCelebration";
 import {
   ACTION_TIMEOUT_SECONDS,
   DEAL_TIMEOUT_SECONDS,
@@ -153,6 +154,10 @@ export default function Home() {
     maxPlayers: 6,
   });
 
+  // Win celebration state
+  const [showCelebration, setShowCelebration] = useState(false);
+  const [celebrationWinAmount, setCelebrationWinAmount] = useState<number | undefined>(undefined);
+
   // Auto-load table on input
   useEffect(() => {
     if (tableIdInput) {
@@ -190,9 +195,6 @@ export default function Home() {
     if (prevPhaseRef.current !== gameState.phase) {
       // Play sounds for phase transitions
       switch (gameState.phase) {
-        case "Dealing":
-          playSound("shuffle");
-          break;
         case "PreFlop":
           playSound("cardDeal");
           break;
@@ -267,10 +269,15 @@ export default function Home() {
           });
         });
 
-        // Play win sound if current player won
+        // Play win sound and show celebration if current player won
         const currentPlayerSeat = gameState.players.find(p => p.player === publicKey?.toString());
-        if (currentPlayerSeat && winners.some(w => w.seatIndex === currentPlayerSeat.seatIndex)) {
-          playSound("chipWin");
+        if (currentPlayerSeat) {
+          const playerWin = winners.find(w => w.seatIndex === currentPlayerSeat.seatIndex);
+          if (playerWin) {
+            playSound("chipWin");
+            setCelebrationWinAmount(playerWin.winnings);
+            setShowCelebration(true);
+          }
         }
 
         // Clear the chip tracking for next hand
@@ -982,11 +989,14 @@ export default function Home() {
                                   content="Shuffles deck with MagicBlock VRF (provably fair), encrypts cards with Inco FHE (cryptographic privacy), and grants decryption access to all players. One click does it all!"
                                 >
                                   <button
-                                    onClick={() => withToast(
-                                      () => requestShuffle(),
-                                      "Dealing cards...",
-                                      "Cards dealt - ready to play!"
-                                    )}
+                                    onClick={() => {
+                                      playSound("shuffle");
+                                      withToast(
+                                        () => requestShuffle(),
+                                        "Dealing cards...",
+                                        "Cards dealt - ready to play!"
+                                      );
+                                    }}
                                     disabled={loading}
                                     className="btn-gold px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50 flex items-center gap-2"
                                   >
@@ -1026,11 +1036,14 @@ export default function Home() {
                         {gameState.phase === "Dealing" && !gameState.useVrf && (
                           canStart ? (
                             <button
-                              onClick={() => withToast(
-                                () => dealCards(),
-                                "Dealing cards...",
-                                "Cards dealt"
-                              )}
+                              onClick={() => {
+                                playSound("shuffle");
+                                withToast(
+                                  () => dealCards(),
+                                  "Dealing cards...",
+                                  "Cards dealt"
+                                );
+                              }}
                               disabled={loading}
                               className="btn-gold px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50"
                             >
@@ -1214,7 +1227,10 @@ export default function Home() {
                 waitingMessage="Waiting for authority to deal cards..."
                 readyMessage="Timeout reached - you can deal the cards"
                 buttonLabel="Deal Cards"
-                onAction={() => withToast(() => dealCards(), "Dealing cards...", "Cards dealt")}
+                onAction={async () => {
+                  playSound("shuffle");
+                  return withToast(() => dealCards(), "Dealing cards...", "Cards dealt");
+                }}
                 isLoading={loading}
               />
             )}
@@ -1248,6 +1264,7 @@ export default function Home() {
                 smallBlind={gameState.smallBlind}
                 bigBlind={gameState.bigBlind}
                 isShowdownPhase={isShowdownPhase}
+                isVrfVerified={gameState.useVrf && gameState.isDeckShuffled}
               />
             )}
 
@@ -1730,6 +1747,16 @@ export default function Home() {
         transactions={transactions}
         onDismiss={dismissTransaction}
         cluster={NETWORK === "localnet" ? "localnet" : "devnet"}
+      />
+
+      {/* Win Celebration */}
+      <WinCelebration
+        isActive={showCelebration}
+        winAmount={celebrationWinAmount}
+        onComplete={() => {
+          setShowCelebration(false);
+          setCelebrationWinAmount(undefined);
+        }}
       />
     </main>
   );

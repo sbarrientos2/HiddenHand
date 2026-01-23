@@ -226,6 +226,32 @@
   }
 }
 
+/* Card flip animation for decrypt reveal */
+@keyframes card-flip {
+  0% {
+    transform: rotateY(0deg);
+  }
+  100% {
+    transform: rotateY(180deg);
+  }
+}
+
+/* Golden glow pulse during card reveal */
+@keyframes reveal-glow {
+  0% {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.2);
+  }
+}
+
 /* Component Layer - Reusable Components */
 @layer components {
   /* Glass Effect */

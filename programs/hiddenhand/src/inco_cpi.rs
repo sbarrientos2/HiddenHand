@@ -103,7 +103,7 @@ pub fn encrypt_card<'info>(
 ///
 /// # Arguments
 /// * `signer` - The authority granting access (table authority)
-/// * `allowance_account` - PDA derived from [allowance, handle, allowed_address]
+/// * `allowance_account` - PDA derived from [handle_bytes, allowed_address] via Inco program
 /// * `allowed_address` - The player who should be able to decrypt
 /// * `system_program` - System program for account creation
 /// * `handle` - The encrypted card handle

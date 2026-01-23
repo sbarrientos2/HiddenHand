@@ -21,3 +21,6 @@ test-ledger/
 # Env files
 .env
 .env.local
+
+# Local assessment (not for git)
+_local_assessment/

@@ -133,19 +133,19 @@ Dealing → PreFlop → Flop → Turn → River → Showdown → Settled
 | Instruction | Description | Status |
 |-------------|-------------|--------|
 | `request_shuffle` | Request VRF randomness for card shuffle | Done |
-| `callback_shuffle` | VRF callback - shuffles deck with randomness | Done |
-| `deal_cards_vrf` | Deal hole cards after VRF shuffle | Done |
+| `callback_shuffle` | VRF callback - atomic shuffle + encrypt with Inco | Done |
 
 ### Inco FHE Instructions (Encrypted Cards)
 
 | Instruction | Description | Status |
 |-------------|-------------|--------|
-| `deal_cards_encrypted` | Shuffle + encrypt cards via Inco FHE | Done |
+| `deal_cards_encrypted` | Encrypt cards during legacy deal | Done |
 | `encrypt_hole_cards` | Encrypt dealt cards for a player | Done |
 | `grant_card_allowance` | Authority grants decryption allowance | Done |
-| `grant_own_allowance` | Player grants own allowance via signing | Done |
-| `grant_community_allowances` | Grant community card access to all players | Done |
-| `reveal_cards` | Reveal cards at showdown (Ed25519 verified) | Done |
+| `grant_own_allowance` | Player grants own allowance after timeout | Done |
+| `grant_community_allowances` | Grant community card access to player | Done |
+| `reveal_cards` | Reveal hole cards at showdown (Ed25519 verified) | Done |
+| `reveal_community` | Reveal community cards (Ed25519 verified) | Done |
 
 ### Timeout & Recovery Instructions
 
@@ -178,15 +178,15 @@ hiddenhand/
 │           ├── start_hand.rs
 │           ├── player_action.rs
 │           ├── deal_cards.rs           # Legacy shuffle (local testing)
-│           ├── deal_cards_encrypted.rs # VRF + Inco encryption
-│           ├── deal_cards_vrf.rs       # VRF shuffle + deal
+│           ├── deal_cards_encrypted.rs # Inco encryption for dealt cards
 │           ├── showdown.rs             # Winner determination
 │           ├── reveal_cards.rs         # Ed25519 verified card reveal
+│           ├── reveal_community.rs     # Ed25519 verified community card reveal
 │           ├── timeout_player.rs       # Force fold inactive players
 │           ├── timeout_reveal.rs       # Force reveal at showdown
 │           ├── close_inactive_table.rs # Return funds from abandoned table
 │           ├── request_shuffle.rs      # VRF randomness request
-│           ├── callback_shuffle.rs     # VRF callback, stores seed
+│           ├── callback_shuffle.rs     # VRF callback - atomic shuffle + encrypt
 │           ├── encrypt_hole_cards.rs   # Inco FHE encryption
 │           ├── grant_own_allowance.rs  # Player grants decryption access
 │           └── grant_community_allowances.rs  # Community card access for AFK recovery

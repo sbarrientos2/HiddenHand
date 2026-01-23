@@ -168,7 +168,6 @@ export interface UsePokerGameResult {
 
   // MagicBlock VRF Actions
   requestShuffle: () => Promise<string>;
-  dealCardsVrf: () => Promise<string>;
 
   // Inco FHE Encryption Actions
   encryptHoleCards: (seatIndex: number) => Promise<string>; // Phase 1: Encrypt cards
@@ -1140,106 +1139,6 @@ export function usePokerGame(): UsePokerGameResult {
       setLoading(false);
     }
   }, [program, provider, publicKey, gameState.tablePDA, gameState.table, refreshState]);
-
-  // ============================================================
-  // DEPRECATED: MagicBlock VRF deal cards
-  // With Modified Option B, the callback_shuffle now handles everything!
-  // This function is kept for backwards compatibility only.
-  // For new games: requestShuffle() does shuffle + encrypt atomically.
-  // ============================================================
-  const dealCardsVrf = useCallback(async (): Promise<string> => {
-    if (!program || !provider || !publicKey || !gameState.tablePDA || !gameState.table) {
-      throw new Error("Table not ready");
-    }
-
-    // With Modified Option B, requestShuffle handles everything
-    // Check if cards are already dealt (callback did the work)
-    if (gameState.isDeckShuffled && gameState.phase !== "Dealing") {
-      console.log("DEPRECATED: Cards already dealt by atomic callback. Skipping.");
-      return "already-dealt";
-    }
-
-    if (!gameState.isDeckShuffled) {
-      throw new Error("VRF not complete yet. Call requestShuffle first - it now handles dealing!");
-    }
-
-    const handNumber = BigInt(gameState.table.handNumber.toNumber());
-    const [handPDA] = getHandPDA(gameState.tablePDA, handNumber);
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      // handNumber and handPDA already derived above for delegation check
-      const [deckPDA] = getDeckPDA(gameState.tablePDA, handNumber);
-
-      // Find SB and BB positions
-      const dealerPos = gameState.table.dealerPosition;
-      const occupied = getOccupiedSeats(gameState.table.occupiedSeats, gameState.table.maxPlayers);
-      const isHeadsUp = occupied.length === 2;
-
-      const findNextOccupied = (startPos: number): number => {
-        let pos = (startPos + 1) % gameState.table!.maxPlayers;
-        while (!occupied.includes(pos)) {
-          pos = (pos + 1) % gameState.table!.maxPlayers;
-        }
-        return pos;
-      };
-
-      let sbPos: number;
-      let bbPos: number;
-
-      if (isHeadsUp) {
-        sbPos = dealerPos;
-        bbPos = findNextOccupied(dealerPos);
-      } else {
-        sbPos = findNextOccupied(dealerPos);
-        bbPos = findNextOccupied(sbPos);
-      }
-
-      const [sbSeatPDA] = getSeatPDA(gameState.tablePDA, sbPos);
-      const [bbSeatPDA] = getSeatPDA(gameState.tablePDA, bbPos);
-
-      // Build remaining accounts for other players (not SB/BB)
-      const remainingAccounts: { pubkey: PublicKey; isSigner: boolean; isWritable: boolean }[] = [];
-      for (const seatIndex of occupied) {
-        if (seatIndex !== sbPos && seatIndex !== bbPos) {
-          const [seatPDA] = getSeatPDA(gameState.tablePDA!, seatIndex);
-          remainingAccounts.push({
-            pubkey: seatPDA,
-            isSigner: false,
-            isWritable: true,
-          });
-        }
-      }
-
-      const tx = await program.methods
-        .dealCardsVrf()
-        .accounts({
-          authority: publicKey,
-          table: gameState.tablePDA,
-          handState: handPDA,
-          deckState: deckPDA,
-          sbSeat: sbSeatPDA,
-          bbSeat: bbSeatPDA,
-          incoProgram: INCO_PROGRAM_ID,
-          systemProgram: SystemProgram.programId,
-        })
-        .remainingAccounts(remainingAccounts)
-        .rpc();
-
-      await provider.connection.confirmTransaction(tx, "confirmed");
-      setGameState((prev) => ({ ...prev, isDeckShuffled: false })); // Reset for next hand
-      await refreshState();
-      return tx;
-    } catch (e) {
-      const message = parseAnchorError(e);
-      setError(message);
-      throw e;
-    } finally {
-      setLoading(false);
-    }
-  }, [program, provider, publicKey, gameState.tablePDA, gameState.table, gameState.isDeckShuffled, refreshState]);
 
   // ============================================================
   // Inco FHE: Phase 1 - Encrypt hole cards (stores handles)
@@ -2261,7 +2160,6 @@ export function usePokerGame(): UsePokerGameResult {
     timeoutPlayer,
     // MagicBlock VRF
     requestShuffle,
-    dealCardsVrf,
     // Inco FHE Encryption
     encryptHoleCards,
     grantCardAllowance,

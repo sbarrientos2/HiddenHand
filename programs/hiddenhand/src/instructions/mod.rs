@@ -12,7 +12,6 @@ pub mod deal_cards_encrypted;
 // MagicBlock VRF instructions for provably fair shuffling
 pub mod request_shuffle;
 pub mod callback_shuffle;
-pub mod deal_cards_vrf;
 
 // Timeout handling
 pub mod timeout_player;
@@ -56,8 +55,6 @@ pub use start_hand::*;
 pub use request_shuffle::*;
 #[allow(ambiguous_glob_reexports)]
 pub use callback_shuffle::*;
-#[allow(ambiguous_glob_reexports)]
-pub use deal_cards_vrf::*;
 #[allow(ambiguous_glob_reexports)]
 pub use timeout_player::*;
 #[allow(ambiguous_glob_reexports)]

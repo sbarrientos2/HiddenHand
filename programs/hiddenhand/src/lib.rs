@@ -100,13 +100,6 @@ pub mod hiddenhand {
         instructions::callback_shuffle::handler(ctx, randomness)
     }
 
-    /// DEPRECATED: Use request_shuffle instead!
-    /// Deal hole cards - kept for backwards compatibility only.
-    /// With Modified Option B, callback_shuffle handles everything atomically.
-    pub fn deal_cards_vrf(ctx: Context<DealCardsVrf>) -> Result<()> {
-        instructions::deal_cards_vrf::handler(ctx)
-    }
-
     // ============================================================
     // Timeout Handling (Prevents Stuck Games)
     // ============================================================

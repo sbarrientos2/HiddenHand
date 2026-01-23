@@ -170,49 +170,6 @@ pub fn grant_allowance_with_pubkey<'info>(
     Ok(())
 }
 
-/// Revoke decryption access from a player
-pub fn revoke_allowance<'info>(
-    signer: &AccountInfo<'info>,
-    allowance_account: &AccountInfo<'info>,
-    allowed_address: &AccountInfo<'info>,
-    system_program: &AccountInfo<'info>,
-    handle: u128,
-) -> Result<()> {
-    let mut data = Vec::with_capacity(8 + 16 + 1 + 32);
-    data.extend_from_slice(&discriminators::ALLOW);
-    data.extend_from_slice(&handle.to_le_bytes());
-    data.push(0); // value = false (revoke access)
-    data.extend_from_slice(&allowed_address.key().to_bytes());
-
-    let ix = Instruction {
-        program_id: INCO_PROGRAM_ID,
-        accounts: vec![
-            AccountMeta::new(allowance_account.key(), false),
-            AccountMeta::new(signer.key(), true),
-            AccountMeta::new_readonly(allowed_address.key(), false),
-            AccountMeta::new_readonly(system_program.key(), false),
-        ],
-        data,
-    };
-
-    invoke(
-        &ix,
-        &[
-            allowance_account.clone(),
-            signer.clone(),
-            allowed_address.clone(),
-            system_program.clone(),
-        ],
-    )?;
-
-    msg!(
-        "Allowance revoked: handle {} <- player {}",
-        handle,
-        allowed_address.key()
-    );
-    Ok(())
-}
-
 /// Encrypt multiple cards in a batch (for efficiency)
 /// Returns a vector of encrypted handles
 pub fn encrypt_cards<'info>(

@@ -45,7 +45,6 @@ export default function Home() {
     setTableId,
     // MagicBlock VRF
     requestShuffle,
-    dealCardsVrf,
     setUseVrf,
     // Inco FHE Encryption
     encryptHoleCards,

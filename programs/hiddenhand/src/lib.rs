@@ -174,6 +174,19 @@ pub mod hiddenhand {
         instructions::close_inactive_table::handler(ctx)
     }
 
+    /// Grant community card allowances to a player
+    /// This enables the player to decrypt community cards via Inco, which is needed
+    /// if they want to reveal community cards when authority is AFK
+    ///
+    /// Called by authority after VRF shuffle for each active player.
+    /// remaining_accounts: 5 allowance PDAs for community cards [card0-card4]
+    pub fn grant_community_allowances<'info>(
+        ctx: Context<'_, '_, 'info, 'info, GrantCommunityAllowances<'info>>,
+        seat_index: u8,
+    ) -> Result<()> {
+        instructions::grant_community_allowances::handler(ctx, seat_index)
+    }
+
     /// Reveal community cards (flop/turn/river) with Ed25519 signature verification
     ///
     /// Authority calls this when betting round completes and community cards need to be revealed.

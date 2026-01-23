@@ -31,6 +31,9 @@ pub mod grant_own_allowance;
 pub mod timeout_reveal;
 pub mod close_inactive_table;
 
+// Community card allowances - enable any player to reveal if authority AFK
+pub mod grant_community_allowances;
+
 // Re-export everything for convenience
 // The `handler` name conflicts are expected and handled by Anchor's program macro
 #[allow(ambiguous_glob_reexports)]
@@ -69,3 +72,5 @@ pub use grant_own_allowance::*;
 pub use timeout_reveal::*;
 #[allow(ambiguous_glob_reexports)]
 pub use close_inactive_table::*;
+#[allow(ambiguous_glob_reexports)]
+pub use grant_community_allowances::*;

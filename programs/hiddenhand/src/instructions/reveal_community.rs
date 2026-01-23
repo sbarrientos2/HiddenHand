@@ -1,13 +1,17 @@
 //! Reveal community cards (flop/turn/river)
 //!
-//! This instruction is called by the authority to reveal community cards
-//! that have been encrypted during the VRF shuffle. Ed25519 signature
-//! verification ensures the revealed values came from Inco's TEE decryption.
+//! This instruction reveals community cards that have been encrypted during
+//! the VRF shuffle. Ed25519 signature verification ensures the revealed
+//! values came from Inco's TEE decryption.
+//!
+//! Authorization:
+//! - Authority can call immediately
+//! - Any player can call after COMMUNITY_REVEAL_TIMEOUT_SECONDS (60s)
 //!
 //! Flow:
 //! 1. Betting round completes, awaiting_community_reveal is set to true
-//! 2. Authority decrypts community cards via Inco SDK (client-side)
-//! 3. Authority calls this instruction with Ed25519 attestation
+//! 2. Caller decrypts community cards via Inco SDK (client-side)
+//! 3. Caller submits this instruction with Ed25519 attestation
 //! 4. Program verifies signatures and stores revealed cards
 //! 5. Phase advances and play continues
 
@@ -36,15 +40,15 @@ pub const INCO_COVALIDATOR_PUBKEY: [u8; 32] = [
 
 #[derive(Accounts)]
 pub struct RevealCommunity<'info> {
-    /// Authority revealing the community cards
+    /// Caller revealing the community cards
+    /// Authority can call immediately, others must wait for timeout
     #[account(mut)]
-    pub authority: Signer<'info>,
+    pub caller: Signer<'info>,
 
     #[account(
         mut,
         seeds = [TABLE_SEED, table.table_id.as_ref()],
-        bump = table.bump,
-        constraint = table.authority == authority.key() @ HiddenHandError::UnauthorizedAuthority
+        bump = table.bump
     )]
     pub table: Account<'info, Table>,
 
@@ -120,6 +124,7 @@ pub fn handler(ctx: Context<RevealCommunity>, cards: Vec<u8>) -> Result<()> {
     let table = &ctx.accounts.table;
     let hand_state = &mut ctx.accounts.hand_state;
     let deck_state = &ctx.accounts.deck_state;
+    let caller = &ctx.accounts.caller;
     let clock = Clock::get()?;
 
     // Validate table is playing
@@ -127,6 +132,17 @@ pub fn handler(ctx: Context<RevealCommunity>, cards: Vec<u8>) -> Result<()> {
         table.status == TableStatus::Playing,
         HiddenHandError::HandNotInProgress
     );
+
+    // Authorization check: authority can call immediately, others must wait for timeout
+    let is_authority = table.authority == caller.key();
+    if !is_authority {
+        let elapsed = clock.unix_timestamp - hand_state.last_action_time;
+        require!(
+            elapsed >= ALLOWANCE_TIMEOUT_SECONDS,
+            HiddenHandError::TimeoutNotReached
+        );
+        msg!("Non-authority revealing community cards after {} seconds timeout", elapsed);
+    }
 
     // Must be waiting for community reveal
     require!(

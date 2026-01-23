@@ -1044,6 +1044,72 @@ export function usePokerGame(): UsePokerGameResult {
           }
         }
 
+        console.log("Hole card allowances granted! Now granting community card allowances...");
+
+        // ============================================================
+        // GRANT COMMUNITY CARD ALLOWANCES
+        // This enables any player to reveal community cards if authority is AFK
+        // ============================================================
+
+        // Fetch deck state to get community card handles
+        const deckStateForCommunity = await accounts.deckState.fetch(deckPDA) as DeckStateAccount;
+        const communityHandles = deckStateForCommunity.cards.slice(0, 5).map(bn => BigInt(bn.toString()));
+
+        // Check if community cards are encrypted
+        const communityEncrypted = communityHandles.every(h => h > BigInt(255));
+        if (communityEncrypted) {
+          console.log("Community card handles:", communityHandles.map(h => h.toString()));
+
+          // Grant community allowances for each player
+          for (const seatIndex of occupied) {
+            try {
+              const [seatPDA] = getSeatPDA(gameState.tablePDA!, seatIndex);
+              const seat = await accounts.playerSeat.fetch(seatPDA) as PlayerSeatAccount;
+
+              // Derive allowance PDAs for all 5 community cards
+              const communityAllowancePDAs = communityHandles.map(handle =>
+                getAllowancePDA(handle, seat.player)[0]
+              );
+
+              console.log(`Granting community allowances for seat ${seatIndex}...`);
+
+              const grantCommunityTx = await program.methods
+                .grantCommunityAllowances(seatIndex)
+                .accounts({
+                  authority: publicKey,
+                  table: gameState.tablePDA,
+                  handState: handPDA,
+                  deckState: deckPDA,
+                  playerSeat: seatPDA,
+                  player: seat.player, // The player receiving the allowance
+                  incoProgram: INCO_PROGRAM_ID,
+                  systemProgram: SystemProgram.programId,
+                })
+                .remainingAccounts(
+                  communityAllowancePDAs.map(pda => ({
+                    pubkey: pda,
+                    isSigner: false,
+                    isWritable: true,
+                  }))
+                )
+                .rpc();
+
+              await provider.connection.confirmTransaction(grantCommunityTx, "confirmed");
+              console.log(`Community allowances granted for seat ${seatIndex}:`, grantCommunityTx);
+
+              // Small delay between grants
+              await new Promise(resolve => setTimeout(resolve, 300));
+            } catch (e) {
+              console.error(`Failed to grant community allowances for seat ${seatIndex}:`, e);
+              // Continue with other seats
+            }
+          }
+
+          console.log("All community card allowances granted!");
+        } else {
+          console.log("Community cards not encrypted, skipping community allowance grants");
+        }
+
         console.log("All allowances granted! Players can now decrypt their cards.");
 
         // Update state to reflect completed shuffle AND allowances
@@ -1568,8 +1634,29 @@ export function usePokerGame(): UsePokerGameResult {
       throw new Error("Not ready to reveal community cards");
     }
 
-    if (!gameState.isAuthority) {
-      throw new Error("Only authority can reveal community cards");
+    // Authority can always reveal. Non-authority can reveal after timeout (60s).
+    // The on-chain program validates the timeout, so we just check if we should attempt it.
+    const isAuthority = gameState.isAuthority;
+    if (!isAuthority) {
+      // Check if timeout has passed for non-authority
+      // IMPORTANT: Use Solana cluster time, not local time, to avoid clock skew issues
+      const lastActionTimeBN = gameState.handState?.lastActionTime;
+      const lastActionTime = typeof lastActionTimeBN === 'number' ? lastActionTimeBN : lastActionTimeBN?.toNumber?.() ?? 0;
+
+      // Get Solana cluster time instead of local time
+      const slot = await provider.connection.getSlot();
+      const clusterTime = await provider.connection.getBlockTime(slot);
+      if (!clusterTime) {
+        throw new Error("Could not fetch Solana cluster time");
+      }
+
+      const elapsed = clusterTime - lastActionTime;
+      const COMMUNITY_REVEAL_TIMEOUT = 60;
+
+      if (elapsed < COMMUNITY_REVEAL_TIMEOUT) {
+        throw new Error(`Non-authority must wait ${Math.ceil(COMMUNITY_REVEAL_TIMEOUT - elapsed)}s more for timeout`);
+      }
+      console.log(`[Community Reveal] Non-authority proceeding after ${elapsed}s timeout (cluster time)`);
     }
 
     if (!gameState.awaitingCommunityReveal) {
@@ -1642,7 +1729,7 @@ export function usePokerGame(): UsePokerGameResult {
       const { decrypt } = await import("@inco/solana-sdk");
       const handleStrings = handles.map((h) => h.toString(10));
 
-      // Authority uses their own wallet to decrypt
+      // Caller uses their wallet to decrypt (any player with allowance can decrypt)
       const result = await decrypt(handleStrings, {
         address: publicKey,
         signMessage: signMessage!,
@@ -1673,7 +1760,7 @@ export function usePokerGame(): UsePokerGameResult {
       const revealIx = await program.methods
         .revealCommunity(cardsBuffer)
         .accounts({
-          authority: publicKey,
+          caller: publicKey,
           table: gameState.tablePDA,
           handState: handPDA,
           deckState: deckPDA,
@@ -1709,7 +1796,6 @@ export function usePokerGame(): UsePokerGameResult {
       }, "confirmed");
 
       console.log("Community cards revealed on-chain:", signature);
-      communityRevealInProgressRef.current = false; // Reset ref on success
       setGameState((prev) => ({
         ...prev,
         isRevealingCommunity: false,
@@ -1718,6 +1804,14 @@ export function usePokerGame(): UsePokerGameResult {
 
       // Refresh state to get updated phase and community cards
       await refreshState();
+
+      // Delay ref reset to allow React state to propagate and prevent race conditions
+      // The useEffect checks both awaitingCommunityReveal AND the ref, so this prevents
+      // duplicate triggers while React batches and processes state updates
+      setTimeout(() => {
+        communityRevealInProgressRef.current = false;
+      }, 1000);
+
       return signature;
     } catch (e) {
       console.error("Failed to reveal community cards:", e);
@@ -1728,18 +1822,21 @@ export function usePokerGame(): UsePokerGameResult {
   }, [program, provider, publicKey, signMessage, gameState.tablePDA, gameState.table, gameState.deckState, gameState.handState, gameState.phase, gameState.isAuthority, gameState.awaitingCommunityReveal, refreshState]);
 
   // ============================================================
-  // Auto-reveal community cards when authority sees awaitingCommunityReveal
+  // Auto-reveal community cards:
+  // - Authority can reveal immediately
+  // - Non-authority can reveal after 60 second timeout (for AFK authority)
   // ============================================================
   useEffect(() => {
-    // Only authority should auto-reveal
-    if (!gameState.isAuthority) return;
-
     // Check if we're waiting for community reveal and not already revealing
     // Also check ref to prevent duplicate attempts from useEffect re-runs
-    if (gameState.awaitingCommunityReveal && !gameState.isRevealingCommunity && !communityRevealInProgressRef.current) {
-      console.log("[Auto-reveal] Detected awaitingCommunityReveal, triggering reveal...");
+    if (!gameState.awaitingCommunityReveal || gameState.isRevealingCommunity || communityRevealInProgressRef.current) {
+      return;
+    }
 
-      // Small delay to ensure state is stable
+    // Authority can reveal immediately
+    if (gameState.isAuthority) {
+      console.log("[Auto-reveal] Authority detected awaitingCommunityReveal, triggering reveal...");
+
       const timeout = setTimeout(() => {
         revealCommunityCards()
           .then((sig) => {
@@ -1748,7 +1845,6 @@ export function usePokerGame(): UsePokerGameResult {
             }
           })
           .catch((e) => {
-            // Don't show error if it's just a "not awaiting" error (race condition)
             const errorMsg = e instanceof Error ? e.message : String(e);
             if (!errorMsg.includes("Not awaiting") && !errorMsg.includes("CommunityNotReady")) {
               console.error("[Auto-reveal] Failed to reveal community cards:", e);
@@ -1761,7 +1857,54 @@ export function usePokerGame(): UsePokerGameResult {
 
       return () => clearTimeout(timeout);
     }
-  }, [gameState.isAuthority, gameState.awaitingCommunityReveal, gameState.isRevealingCommunity, revealCommunityCards]);
+
+    // Non-authority: check if timeout has passed (60 seconds)
+    const lastActionTimeBN = gameState.handState?.lastActionTime;
+    if (!lastActionTimeBN) return;
+
+    const lastActionTime = typeof lastActionTimeBN === 'number' ? lastActionTimeBN : lastActionTimeBN.toNumber();
+    const elapsed = Date.now() / 1000 - lastActionTime;
+    const COMMUNITY_REVEAL_TIMEOUT = 60; // Same as ALLOWANCE_TIMEOUT_SECONDS
+    // Add buffer for clock skew between local time and Solana cluster time
+    // The actual revealCommunityCards function uses cluster time for authoritative check
+    const CLOCK_SKEW_BUFFER = 5;
+
+    if (elapsed >= COMMUNITY_REVEAL_TIMEOUT + CLOCK_SKEW_BUFFER) {
+      console.log(`[Auto-reveal] Non-authority can reveal after ${elapsed.toFixed(0)}s timeout (with ${CLOCK_SKEW_BUFFER}s buffer), triggering...`);
+
+      const timeout = setTimeout(() => {
+        revealCommunityCards()
+          .then((sig) => {
+            if (sig) {
+              console.log("[Auto-reveal] Community cards revealed by non-authority:", sig);
+            }
+          })
+          .catch((e) => {
+            const errorMsg = e instanceof Error ? e.message : String(e);
+            if (!errorMsg.includes("Not awaiting") && !errorMsg.includes("CommunityNotReady") && !errorMsg.includes("TimeoutNotReached")) {
+              console.error("[Auto-reveal] Non-authority failed to reveal:", e);
+              // Don't show error to user - authority might still reveal
+            } else {
+              console.log("[Auto-reveal] Non-authority reveal skipped (already completed or timeout not reached)");
+            }
+          });
+      }, 500);
+
+      return () => clearTimeout(timeout);
+    }
+
+    // If timeout hasn't passed yet, set up a timer to check again
+    const remainingTime = (COMMUNITY_REVEAL_TIMEOUT + CLOCK_SKEW_BUFFER - elapsed) * 1000;
+    if (remainingTime > 0) {
+      console.log(`[Auto-reveal] Non-authority waiting ${(remainingTime / 1000).toFixed(1)}s for timeout...`);
+      const checkTimer = setTimeout(() => {
+        // This will trigger a re-render via state change from refreshState
+        // The useEffect will run again and check the timeout
+      }, Math.min(remainingTime, 5000)); // Check every 5 seconds max
+
+      return () => clearTimeout(checkTimer);
+    }
+  }, [gameState.isAuthority, gameState.awaitingCommunityReveal, gameState.isRevealingCommunity, gameState.handState?.lastActionTime, revealCommunityCards]);
 
   // ============================================================
   // Game Liveness: Self-grant allowance after timeout

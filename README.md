@@ -31,6 +31,7 @@ HiddenHand is the first poker game where **no one can see your cards. Not even u
 - **Full Texas Hold'em** - PreFlop, Flop, Turn, River, Showdown
 - **Multi-round Gameplay** - Play consecutive hands with persistent chip stacks
 - **Timeout Protection** - Players can't stall the game indefinitely
+- **Authority AFK Recovery** - Non-authority players can continue game after 60s timeout
 - **Abandoned Table Recovery** - Anyone can close inactive tables and return funds
 - **Client-side Decryption** - Only you can see your cards via wallet signing
 - **42 Unit Tests** - Comprehensive test coverage for hand evaluation and game logic
@@ -140,7 +141,7 @@ Open [http://localhost:3000](http://localhost:3000) and connect your wallet.
 HiddenHand/
 ├── programs/
 │   └── hiddenhand/src/
-│       ├── lib.rs              # Program entry point (18 instructions)
+│       ├── lib.rs              # Program entry point (19 instructions)
 │       ├── instructions/       # All instruction handlers
 │       │   ├── create_table.rs
 │       │   ├── join_table.rs
@@ -154,6 +155,7 @@ HiddenHand/
 │       │   ├── timeout_player.rs      # Timeout handling
 │       │   ├── timeout_reveal.rs
 │       │   ├── close_inactive_table.rs
+│       │   ├── grant_community_allowances.rs  # AFK recovery
 │       │   └── ...
 │       ├── state/              # Account structures
 │       │   ├── table.rs

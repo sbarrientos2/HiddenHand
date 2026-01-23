@@ -216,6 +216,16 @@
   }
 }
 
+/* Encrypted card shimmer - elegant light sweep */
+@keyframes card-shimmer {
+  0% {
+    background-position: 200% center;
+  }
+  100% {
+    background-position: -200% center;
+  }
+}
+
 /* Component Layer - Reusable Components */
 @layer components {
   /* Glass Effect */

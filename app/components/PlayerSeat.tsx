@@ -51,6 +51,14 @@ export const PlayerSeat: FC<PlayerSeatProps> = ({
     ? revealedCards!
     : holeCards;
 
+  // Show encrypted effect for opponent's hidden cards during active gameplay
+  // This visually communicates "these cards are private" to the viewer
+  const isEncrypted = !showCards &&
+    !isCurrentPlayer &&
+    status !== "folded" &&
+    status !== "empty" &&
+    (status === "playing" || status === "allin");
+
   // Format wallet address
   const shortAddress = player
     ? `${player.slice(0, 4)}...${player.slice(-4)}`
@@ -160,7 +168,8 @@ export const PlayerSeat: FC<PlayerSeatProps> = ({
           <div className={`relative ${isFolded ? "grayscale opacity-60" : ""}`}>
             <CardHand
               cards={displayCards}
-              hidden={!showCards && status !== "folded"}
+              hidden={!showCards && status !== "folded" && !isEncrypted}
+              encrypted={isEncrypted}
               size="sm"
               dealt
             />

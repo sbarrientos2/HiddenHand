@@ -5,6 +5,7 @@ import { FC } from "react";
 interface CardProps {
   card: number | null; // 0-51 or null for hidden
   hidden?: boolean;
+  encrypted?: boolean; // Show encrypted state with shimmer effect
   size?: "sm" | "md" | "lg";
   dealt?: boolean; // Enable deal animation
   delay?: number; // Animation delay in ms
@@ -52,6 +53,7 @@ const sizeConfig = {
 export const Card: FC<CardProps> = ({
   card,
   hidden = false,
+  encrypted = false,
   size = "md",
   dealt = false,
   delay = 0,
@@ -67,8 +69,11 @@ export const Card: FC<CardProps> = ({
   // Also handle undefined (which can happen if decryption returns fewer cards than expected)
   const isInvalidCard = card != null && (card < 0 || card > 51);
 
-  if (hidden || card == null || card === 255 || isInvalidCard) {
-    // Premium card back
+  // Show card back for hidden, null, invalid, or encrypted cards
+  const showBack = hidden || card == null || card === 255 || isInvalidCard || encrypted;
+
+  if (showBack) {
+    // Premium card back - with optional encryption effect
     return (
       <div
         className={`
@@ -82,11 +87,39 @@ export const Card: FC<CardProps> = ({
           transition-transform duration-200
           hover:scale-105
           hover:-translate-y-1
+          ${encrypted ? "encrypted-card" : ""}
         `}
         style={animationStyle}
       >
-        {/* Outer border glow */}
-        <div className="absolute inset-0 rounded-lg border border-gold-dark/30" />
+        {/* Encrypted glow effect */}
+        {encrypted && (
+          <div
+            className="absolute -inset-1 rounded-xl pointer-events-none"
+            style={{
+              background: "radial-gradient(ellipse at center, rgba(34, 211, 238, 0.15) 0%, transparent 70%)",
+              filter: "blur(4px)",
+            }}
+          />
+        )}
+
+        {/* Outer border - cyan tint when encrypted */}
+        <div
+          className={`absolute inset-0 rounded-lg border ${
+            encrypted ? "border-cyan-400/40" : "border-gold-dark/30"
+          }`}
+        />
+
+        {/* Shimmer overlay for encrypted cards */}
+        {encrypted && (
+          <div
+            className="absolute inset-0 rounded-lg pointer-events-none overflow-hidden"
+            style={{
+              background: "linear-gradient(105deg, transparent 40%, rgba(34, 211, 238, 0.08) 45%, rgba(34, 211, 238, 0.15) 50%, rgba(34, 211, 238, 0.08) 55%, transparent 60%)",
+              backgroundSize: "200% 100%",
+              animation: "card-shimmer 3s ease-in-out infinite",
+            }}
+          />
+        )}
 
         {/* Inner pattern */}
         <div className="absolute inset-1.5 rounded-md border border-white/5 flex items-center justify-center">
@@ -107,25 +140,50 @@ export const Card: FC<CardProps> = ({
           {/* Center emblem */}
           <div className="relative z-10 flex flex-col items-center">
             <div
-              className="font-display text-gold-main font-bold tracking-wider"
+              className={`font-display font-bold tracking-wider ${
+                encrypted ? "text-cyan-400" : "text-gold-main"
+              }`}
               style={{ fontSize: size === "lg" ? "14px" : size === "md" ? "10px" : "8px" }}
             >
-              HH
+              {encrypted ? "🔐" : "HH"}
             </div>
             <div
-              className="text-gold-dark/60"
+              className={encrypted ? "text-cyan-400/60" : "text-gold-dark/60"}
               style={{ fontSize: size === "lg" ? "8px" : "6px" }}
             >
-              {size !== "sm" && "\u2660 \u2665 \u2666 \u2663"}
+              {size !== "sm" && (encrypted ? "ENCRYPTED" : "\u2660 \u2665 \u2666 \u2663")}
             </div>
           </div>
         </div>
 
-        {/* Corner accents */}
-        <div className="absolute top-1 left-1 w-1.5 h-1.5 border-l border-t border-gold-dark/40 rounded-tl" />
-        <div className="absolute top-1 right-1 w-1.5 h-1.5 border-r border-t border-gold-dark/40 rounded-tr" />
-        <div className="absolute bottom-1 left-1 w-1.5 h-1.5 border-l border-b border-gold-dark/40 rounded-bl" />
-        <div className="absolute bottom-1 right-1 w-1.5 h-1.5 border-r border-b border-gold-dark/40 rounded-br" />
+        {/* Corner accents - cyan when encrypted */}
+        <div className={`absolute top-1 left-1 w-1.5 h-1.5 border-l border-t ${encrypted ? "border-cyan-400/40" : "border-gold-dark/40"} rounded-tl`} />
+        <div className={`absolute top-1 right-1 w-1.5 h-1.5 border-r border-t ${encrypted ? "border-cyan-400/40" : "border-gold-dark/40"} rounded-tr`} />
+        <div className={`absolute bottom-1 left-1 w-1.5 h-1.5 border-l border-b ${encrypted ? "border-cyan-400/40" : "border-gold-dark/40"} rounded-bl`} />
+        <div className={`absolute bottom-1 right-1 w-1.5 h-1.5 border-r border-b ${encrypted ? "border-cyan-400/40" : "border-gold-dark/40"} rounded-br`} />
+
+        {/* Lock badge for encrypted cards */}
+        {encrypted && size !== "sm" && (
+          <div
+            className="absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center z-20"
+            style={{
+              background: "linear-gradient(135deg, #22d3ee 0%, #0891b2 100%)",
+              boxShadow: "0 0 8px rgba(34, 211, 238, 0.5)",
+            }}
+          >
+            <svg
+              className="w-2.5 h-2.5 text-white"
+              fill="currentColor"
+              viewBox="0 0 20 20"
+            >
+              <path
+                fillRule="evenodd"
+                d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z"
+                clipRule="evenodd"
+              />
+            </svg>
+          </div>
+        )}
       </div>
     );
   }
@@ -213,6 +271,7 @@ export const Card: FC<CardProps> = ({
 interface CardHandProps {
   cards: (number | null)[];
   hidden?: boolean;
+  encrypted?: boolean; // Show encrypted state for all cards
   size?: "sm" | "md" | "lg";
   dealt?: boolean;
   staggerDelay?: number; // Delay between each card in ms
@@ -221,6 +280,7 @@ interface CardHandProps {
 export const CardHand: FC<CardHandProps> = ({
   cards,
   hidden = false,
+  encrypted = false,
   size = "md",
   dealt = false,
   staggerDelay = 100,
@@ -232,6 +292,7 @@ export const CardHand: FC<CardHandProps> = ({
           key={idx}
           card={card}
           hidden={hidden}
+          encrypted={encrypted}
           size={size}
           dealt={dealt}
           delay={idx * staggerDelay}

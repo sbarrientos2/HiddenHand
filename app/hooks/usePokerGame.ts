@@ -1732,6 +1732,13 @@ export function usePokerGame(): UsePokerGameResult {
       return;
     }
 
+    // Only reveal during valid phases (PreFlop, Flop, Turn)
+    const phase = gameState.phase;
+    if (phase !== "PreFlop" && phase !== "Flop" && phase !== "Turn") {
+      console.log(`[Auto-reveal] Skipping - invalid phase for community reveal: ${phase}`);
+      return;
+    }
+
     // Authority can reveal immediately
     if (gameState.isAuthority) {
       console.log("[Auto-reveal] Authority detected awaitingCommunityReveal, triggering reveal...");

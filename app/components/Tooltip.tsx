@@ -20,7 +20,7 @@ export function Tooltip({ children, content, title }: TooltipProps) {
       {children}
       {isVisible && (
         <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 pointer-events-none">
-          <div className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 shadow-xl max-w-xs">
+          <div className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 shadow-xl min-w-[280px] max-w-md">
             {title && (
               <div className="text-xs font-semibold text-emerald-400 mb-1">
                 {title}

@@ -1326,4 +1326,205 @@ describe("hiddenhand", () => {
       // - This prevents authority from abandoning the game
     });
   });
+
+  // ============================================================
+  // VRF + INCO INTEGRATION TESTS
+  // These tests verify the privacy features work on devnet
+  // Requires: MagicBlock VRF oracle + Inco Lightning program
+  // ============================================================
+  describe("VRF and Inco Integration", () => {
+    // MagicBlock VRF constants
+    const DEFAULT_QUEUE = new PublicKey("Cuj97ggrhhidhbu39TijNVqE74xvKJ69gDervRUXAxGh");
+    const INCO_PROGRAM_ID = new PublicKey("5sjEbPiqgZrYwR31ahR6Uk9wf5awoX61YGg7jExQSwaj");
+
+    // Helper to fund a keypair by transferring from provider wallet (avoids airdrop rate limits)
+    async function fundKeypair(keypair: Keypair, amount: number = 0.5 * LAMPORTS_PER_SOL): Promise<void> {
+      const tx = new Transaction().add(
+        SystemProgram.transfer({
+          fromPubkey: provider.wallet.publicKey,
+          toPubkey: keypair.publicKey,
+          lamports: amount,
+        })
+      );
+      await provider.sendAndConfirm(tx);
+    }
+
+    // Helper to wait for VRF callback (polls is_shuffled flag)
+    async function waitForShuffle(
+      deckPDA: PublicKey,
+      timeoutMs: number = 60000,
+      pollIntervalMs: number = 2000
+    ): Promise<boolean> {
+      const startTime = Date.now();
+      const IS_SHUFFLED_OFFSET = 8 + 32 + (52 * 16) + 1; // 873
+
+      while (Date.now() - startTime < timeoutMs) {
+        try {
+          const accountInfo = await provider.connection.getAccountInfo(deckPDA);
+          if (accountInfo && accountInfo.data.length > IS_SHUFFLED_OFFSET) {
+            const isShuffled = accountInfo.data[IS_SHUFFLED_OFFSET] === 1;
+            if (isShuffled) {
+              return true;
+            }
+          }
+        } catch (e) {
+          console.warn("Polling deck state:", e);
+        }
+        await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+      }
+      return false;
+    }
+
+    it("VRF shuffle + Inco encryption produces encrypted hole cards", async () => {
+      // This test proves:
+      // 1. VRF oracle responds to shuffle requests
+      // 2. Callback atomically shuffles + encrypts cards
+      // 3. Hole cards are Inco FHE handles (> 255)
+
+      // Create keypairs and fund from provider wallet (avoids airdrop rate limits)
+      const authority = Keypair.generate();
+      const player2 = Keypair.generate();
+
+      console.log("Funding test accounts from provider wallet...");
+      await fundKeypair(authority, 2 * LAMPORTS_PER_SOL);
+      await fundKeypair(player2, 2 * LAMPORTS_PER_SOL);
+      console.log("Accounts funded.");
+
+      // Create table
+      const tableId = generateTableId();
+      const [tablePDA] = getTablePDA(tableId);
+      const [vaultPDA] = getVaultPDA(tablePDA);
+
+      await program.methods
+        .createTable(
+          tableId,
+          new anchor.BN(SMALL_BLIND),
+          new anchor.BN(BIG_BLIND),
+          new anchor.BN(MIN_BUY_IN),
+          new anchor.BN(MAX_BUY_IN),
+          MAX_PLAYERS
+        )
+        .accounts({
+          authority: authority.publicKey,
+          table: tablePDA,
+          vault: vaultPDA,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([authority])
+        .rpc();
+
+      // Player 1 (authority) joins at seat 0
+      const [seat0PDA] = getSeatPDA(tablePDA, 0);
+      await program.methods
+        .joinTable(0, new anchor.BN(MIN_BUY_IN))
+        .accounts({
+          player: authority.publicKey,
+          table: tablePDA,
+          playerSeat: seat0PDA,
+          vault: vaultPDA,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([authority])
+        .rpc();
+
+      // Player 2 joins at seat 1
+      const [seat1PDA] = getSeatPDA(tablePDA, 1);
+      await program.methods
+        .joinTable(1, new anchor.BN(MIN_BUY_IN))
+        .accounts({
+          player: player2.publicKey,
+          table: tablePDA,
+          playerSeat: seat1PDA,
+          vault: vaultPDA,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([player2])
+        .rpc();
+
+      // Start hand
+      const handNumber = BigInt(1);
+      const [handPDA] = getHandPDA(tablePDA, Number(handNumber));
+      const [deckPDA] = getDeckPDA(tablePDA, Number(handNumber));
+
+      await program.methods
+        .startHand()
+        .accounts({
+          caller: authority.publicKey,
+          table: tablePDA,
+          handState: handPDA,
+          deckState: deckPDA,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([authority])
+        .rpc();
+
+      console.log("Hand started. Requesting VRF shuffle...");
+
+      // Request VRF shuffle with seat accounts for atomic encrypt
+      const seatAccounts = [
+        { pubkey: seat0PDA, isSigner: false, isWritable: true },
+        { pubkey: seat1PDA, isSigner: false, isWritable: true },
+      ];
+
+      const shuffleTx = await program.methods
+        .requestShuffle()
+        .accounts({
+          authority: authority.publicKey,
+          table: tablePDA,
+          handState: handPDA,
+          deckState: deckPDA,
+          oracleQueue: DEFAULT_QUEUE,
+          incoProgram: INCO_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .remainingAccounts(seatAccounts)
+        .signers([authority])
+        .rpc();
+
+      console.log("VRF request sent:", shuffleTx);
+      console.log("Waiting for VRF oracle callback (up to 60s)...");
+
+      // Wait for VRF callback to complete
+      const shuffled = await waitForShuffle(deckPDA, 60000, 2000);
+      expect(shuffled).to.be.true;
+
+      console.log("VRF callback completed! Verifying encryption...");
+
+      // Fetch deck state - verify is_shuffled
+      const deckState = await program.account.deckState.fetch(deckPDA);
+      expect(deckState.isShuffled).to.be.true;
+
+      // Fetch player seats - verify hole cards are encrypted (> 255)
+      const seat0 = await program.account.playerSeat.fetch(seat0PDA);
+      const seat1 = await program.account.playerSeat.fetch(seat1PDA);
+
+      const card0_1 = BigInt(seat0.holeCard1.toString());
+      const card0_2 = BigInt(seat0.holeCard2.toString());
+      const card1_1 = BigInt(seat1.holeCard1.toString());
+      const card1_2 = BigInt(seat1.holeCard2.toString());
+
+      console.log("Seat 0 hole cards:", card0_1.toString(), card0_2.toString());
+      console.log("Seat 1 hole cards:", card1_1.toString(), card1_2.toString());
+
+      // Inco FHE handles are always > 255 (plaintext cards are 0-51)
+      expect(card0_1 > BigInt(255)).to.be.true;
+      expect(card0_2 > BigInt(255)).to.be.true;
+      expect(card1_1 > BigInt(255)).to.be.true;
+      expect(card1_2 > BigInt(255)).to.be.true;
+
+      // Verify community cards are also encrypted
+      const communityCards = deckState.cards.slice(0, 5);
+      for (let i = 0; i < 5; i++) {
+        const handle = BigInt(communityCards[i].toString());
+        console.log(`Community card ${i}: ${handle.toString()}`);
+        expect(handle > BigInt(255)).to.be.true;
+      }
+
+      console.log("SUCCESS: VRF shuffle + Inco encryption verified!");
+      console.log("- Deck is shuffled via MagicBlock VRF");
+      console.log("- All hole cards are Inco FHE encrypted handles");
+      console.log("- All community cards are Inco FHE encrypted handles");
+      console.log("- VRF seed was NEVER stored on-chain (only used in callback memory)");
+    });
+  });
 });

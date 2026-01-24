@@ -24,7 +24,6 @@ export interface PlayerResult {
   seatIndex: number;
   holeCards: [number, number] | null; // null if folded/not shown
   handRank: string | null;
-  chipsWon: number;
   chipsBet: number;
   folded: boolean;
   allIn: boolean;
@@ -144,7 +143,6 @@ function parseEventFromBuffer(data: Uint8Array, signature: string): HandHistoryE
         seatIndex,
         holeCards: holeCard1 !== 255 && holeCard2 !== 255 ? [holeCard1, holeCard2] : null,
         handRank: handRankNum !== 255 ? HAND_RANKS[handRankNum] || null : null,
-        chipsWon,
         chipsBet,
         folded,
         allIn,
@@ -190,7 +188,6 @@ export function useHandHistory(program: Program<Idl> | null, tableId?: string) {
         seatIndex: result.seatIndex ?? result.seat_index ?? 0,
         holeCards: holeCard1 !== 255 && holeCard2 !== 255 ? [holeCard1, holeCard2] : null,
         handRank: handRankNum !== 255 ? HAND_RANKS[handRankNum] || null : null,
-        chipsWon: Number(result.chipsWon ?? result.chips_won ?? 0),
         chipsBet: Number(result.chipsBet ?? result.chips_bet ?? 0),
         folded: result.folded ?? false,
         allIn: result.allIn ?? result.all_in ?? false,
@@ -368,9 +365,9 @@ export function formatCard(cardNum: number): string {
   return `${ranks[rank]}${suits[suit]}`;
 }
 
-// Helper to get suit color (for dark backgrounds)
+// Helper to get suit color
 export function getSuitColor(cardNum: number): string {
   if (cardNum === 255 || cardNum < 0 || cardNum > 51) return "text-gray-500";
   const suit = Math.floor(cardNum / 13);
-  return suit <= 1 ? "text-red-500" : "text-gray-200"; // Hearts/Diamonds = red, Clubs/Spades = light gray (visible on dark bg)
+  return suit <= 1 ? "text-red-500" : "text-gray-900"; // Hearts/Diamonds = red, Clubs/Spades = black
 }

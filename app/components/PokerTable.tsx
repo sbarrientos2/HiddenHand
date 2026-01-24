@@ -295,11 +295,11 @@ export const PokerTable: FC<PokerTableProps> = ({
         bigBlind={bigBlind}
       />
 
-      {/* Win celebration - centered on table */}
+      {/* Win celebration - centered on felt area using explicit transform centering */}
       {showWinCelebration && (
-        <div className="absolute inset-0 flex items-center justify-center z-40 pointer-events-none">
+        <div className="absolute inset-10 z-40 pointer-events-none">
           <div
-            className="relative"
+            className="absolute left-1/2 top-1/2"
             style={{
               animation: "win-banner-enter 0.5s ease-out forwards",
             }}

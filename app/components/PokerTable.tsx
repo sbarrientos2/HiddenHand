@@ -4,6 +4,7 @@ import { FC } from "react";
 import { PlayerSeat } from "./PlayerSeat";
 import { CardHand } from "./Card";
 import { ProvablyFairBadge } from "./ProvablyFairBadge";
+import { ChipAnimationLayer } from "./ChipAnimation";
 
 interface Player {
   seatIndex: number;
@@ -30,6 +31,9 @@ interface PokerTableProps {
   bigBlind: number;
   isShowdownPhase?: boolean;
   isVrfVerified?: boolean; // VRF shuffle has completed
+  // Chip animation triggers
+  chipBetTrigger?: { seatIndex: number; amount: number; key: string } | null;
+  chipWinTrigger?: { seatIndex: number; key: string } | null;
 }
 
 // Seat positions around the table (for 6-max)
@@ -57,6 +61,8 @@ export const PokerTable: FC<PokerTableProps> = ({
   bigBlind,
   isShowdownPhase = false,
   isVrfVerified = false,
+  chipBetTrigger = null,
+  chipWinTrigger = null,
 }) => {
   // Calculate SB and BB positions
   const occupiedSeats = players
@@ -276,6 +282,13 @@ export const PokerTable: FC<PokerTableProps> = ({
           </div>
         );
       })}
+
+      {/* Chip animations - rendered inside table for correct positioning */}
+      <ChipAnimationLayer
+        betTrigger={chipBetTrigger}
+        winTrigger={chipWinTrigger}
+        bigBlind={bigBlind}
+      />
     </div>
   );
 };

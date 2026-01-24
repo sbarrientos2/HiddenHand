@@ -21,6 +21,7 @@ import { useHandHistory } from "@/hooks/useHandHistory";
 import { OnChainHandHistory } from "@/components/OnChainHandHistory";
 import { Tooltip, InfoIcon } from "@/components/Tooltip";
 import { WinCelebration } from "@/components/WinCelebration";
+import { useChipAnimations } from "@/components/ChipAnimation";
 import {
   ACTION_TIMEOUT_SECONDS,
   DEAL_TIMEOUT_SECONDS,
@@ -158,6 +159,10 @@ export default function Home() {
   const [showCelebration, setShowCelebration] = useState(false);
   const [celebrationWinAmount, setCelebrationWinAmount] = useState<number | undefined>(undefined);
 
+  // Chip animation state
+  const { betTrigger, winTrigger, triggerBetAnimation, triggerWinAnimation } = useChipAnimations();
+  const prevBetsRef = useRef<Map<number, number>>(new Map());
+
   // Auto-load table on input
   useEffect(() => {
     if (tableIdInput) {
@@ -259,14 +264,18 @@ export default function Home() {
           }
         });
 
-        // Add winner events
-        winners.forEach((winner) => {
+        // Add winner events and trigger chip animations
+        winners.forEach((winner, index) => {
           const winningsInSol = lamportsToSol(winner.winnings);
           const handInfo = winner.handDesc ? ` with ${winner.handDesc}` : "";
           addGameEvent("winner", `Seat ${winner.seatIndex + 1} won ${winningsInSol.toFixed(2)} SOL${handInfo}`, {
             seatIndex: winner.seatIndex,
             amount: winner.winnings,
           });
+          // Trigger chip animation from pot to winner (stagger if multiple winners)
+          setTimeout(() => {
+            triggerWinAnimation(winner.seatIndex);
+          }, index * 200);
         });
 
         // Play win sound and show celebration if current player won
@@ -313,7 +322,42 @@ export default function Home() {
       }
       prevCommunityRef.current = [...currentCommunity];
     }
-  }, [gameState.phase, gameState.communityCards, gameState.players, addGameEvent, playSound, publicKey]);
+  }, [gameState.phase, gameState.communityCards, gameState.players, addGameEvent, playSound, publicKey, triggerWinAnimation]);
+
+  // Track bets to trigger chip animations
+  useEffect(() => {
+    // Skip if no betting is happening
+    if (gameState.phase === "Dealing" || gameState.phase === "Settled" || gameState.phase === "Showdown") {
+      // Reset bet tracking when hand ends or starts
+      if (gameState.phase === "Dealing" || gameState.phase === "Settled") {
+        prevBetsRef.current = new Map();
+      }
+      return;
+    }
+
+    // Check each player for bet increases
+    gameState.players.forEach((player) => {
+      if (player.status === "empty" || player.status === "folded") return;
+
+      const prevBet = prevBetsRef.current.get(player.seatIndex) ?? 0;
+      const currentBet = player.currentBet;
+
+      // Trigger animation if bet increased
+      if (currentBet > prevBet) {
+        const betIncrease = currentBet - prevBet;
+        triggerBetAnimation(player.seatIndex, betIncrease);
+      }
+    });
+
+    // Update previous bets
+    const newBets = new Map<number, number>();
+    gameState.players.forEach((player) => {
+      if (player.status !== "empty") {
+        newBets.set(player.seatIndex, player.currentBet);
+      }
+    });
+    prevBetsRef.current = newBets;
+  }, [gameState.players, gameState.phase, triggerBetAnimation]);
 
   // Find current player info
   const currentPlayer = gameState.players.find(
@@ -1265,6 +1309,8 @@ export default function Home() {
                 bigBlind={gameState.bigBlind}
                 isShowdownPhase={isShowdownPhase}
                 isVrfVerified={gameState.useVrf && gameState.isDeckShuffled}
+                chipBetTrigger={betTrigger}
+                chipWinTrigger={winTrigger}
               />
             )}
 

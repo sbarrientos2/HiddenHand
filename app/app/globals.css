@@ -290,6 +290,28 @@
   }
 }
 
+/* Chip animation - flies from source to target using CSS custom properties */
+@keyframes chip-to-target {
+  0% {
+    top: var(--from-top);
+    left: var(--from-left);
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+  80% {
+    top: var(--to-top);
+    left: var(--to-left);
+    transform: translate(-50%, -50%) scale(0.9);
+    opacity: 1;
+  }
+  100% {
+    top: var(--to-top);
+    left: var(--to-left);
+    transform: translate(-50%, -50%) scale(0.6);
+    opacity: 0;
+  }
+}
+
 /* Component Layer - Reusable Components */
 @layer components {
   /* Glass Effect */

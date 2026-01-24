@@ -164,12 +164,12 @@ export const WinCelebration: FC<WinCelebrationProps> = ({
 
       {/* Winner banner */}
       {showBanner && (
-        <div
-          className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2"
-          style={{
-            animation: "win-banner-enter 0.5s ease-out forwards",
-          }}
-        >
+        <div className="absolute inset-0 flex items-center justify-center pt-0">
+          <div
+            style={{
+              animation: "win-banner-enter 0.5s ease-out forwards",
+            }}
+          >
           {/* Glow backdrop */}
           <div
             className="absolute -inset-8 rounded-3xl"
@@ -225,6 +225,7 @@ export const WinCelebration: FC<WinCelebrationProps> = ({
               </div>
             )}
           </div>
+        </div>
         </div>
       )}
     </div>

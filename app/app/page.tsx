@@ -20,7 +20,6 @@ import { SoundToggle } from "@/components/SoundToggle";
 import { useHandHistory } from "@/hooks/useHandHistory";
 import { OnChainHandHistory } from "@/components/OnChainHandHistory";
 import { Tooltip, InfoIcon } from "@/components/Tooltip";
-import { WinCelebration } from "@/components/WinCelebration";
 import { useChipAnimations } from "@/components/ChipAnimation";
 import {
   ACTION_TIMEOUT_SECONDS,
@@ -158,6 +157,17 @@ export default function Home() {
   // Win celebration state
   const [showCelebration, setShowCelebration] = useState(false);
   const [celebrationWinAmount, setCelebrationWinAmount] = useState<number | undefined>(undefined);
+
+  // Auto-dismiss win celebration after 2 seconds
+  useEffect(() => {
+    if (showCelebration) {
+      const timeout = setTimeout(() => {
+        setShowCelebration(false);
+        setCelebrationWinAmount(undefined);
+      }, 2000);
+      return () => clearTimeout(timeout);
+    }
+  }, [showCelebration]);
 
   // Chip animation state
   const { betTrigger, winTrigger, triggerBetAnimation, triggerWinAnimation } = useChipAnimations();
@@ -1311,6 +1321,8 @@ export default function Home() {
                 isVrfVerified={gameState.useVrf && gameState.isDeckShuffled}
                 chipBetTrigger={betTrigger}
                 chipWinTrigger={winTrigger}
+                showWinCelebration={showCelebration}
+                winAmount={celebrationWinAmount}
               />
             )}
 
@@ -1795,15 +1807,6 @@ export default function Home() {
         cluster={NETWORK === "localnet" ? "localnet" : "devnet"}
       />
 
-      {/* Win Celebration */}
-      <WinCelebration
-        isActive={showCelebration}
-        winAmount={celebrationWinAmount}
-        onComplete={() => {
-          setShowCelebration(false);
-          setCelebrationWinAmount(undefined);
-        }}
-      />
     </main>
   );
 }

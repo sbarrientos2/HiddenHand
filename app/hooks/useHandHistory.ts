@@ -365,9 +365,9 @@ export function formatCard(cardNum: number): string {
   return `${ranks[rank]}${suits[suit]}`;
 }
 
-// Helper to get suit color
+// Helper to get suit color (for dark backgrounds)
 export function getSuitColor(cardNum: number): string {
   if (cardNum === 255 || cardNum < 0 || cardNum > 51) return "text-gray-500";
   const suit = Math.floor(cardNum / 13);
-  return suit <= 1 ? "text-red-500" : "text-gray-900"; // Hearts/Diamonds = red, Clubs/Spades = black
+  return suit <= 1 ? "text-red-500" : "text-white"; // Hearts/Diamonds = red, Clubs/Spades = white
 }

@@ -83,7 +83,7 @@ export function OnChainHandHistory({
             {/* Community Cards */}
             <div className="mb-2">
               <span className="text-xs text-[var(--text-secondary)]">Board: </span>
-              <span className="font-mono">
+              <span className="font-mono text-base font-semibold">
                 {hand.communityCards.length > 0 ? (
                   hand.communityCards.map((card, i) => (
                     <span key={i} className={`mx-0.5 ${getSuitColor(card)}`}>
@@ -91,7 +91,7 @@ export function OnChainHandHistory({
                     </span>
                   ))
                 ) : (
-                  <span className="text-[var(--text-secondary)]">No cards</span>
+                  <span className="text-[var(--text-secondary)] text-xs font-normal">No cards</span>
                 )}
               </span>
             </div>
@@ -122,7 +122,7 @@ export function OnChainHandHistory({
                     {player.folded ? (
                       <span className="text-gray-500 italic">folded</span>
                     ) : player.holeCards ? (
-                      <span className="font-mono">
+                      <span className="font-mono text-base font-semibold">
                         <span className={getSuitColor(player.holeCards[0])}>
                           {formatCard(player.holeCards[0])}
                         </span>

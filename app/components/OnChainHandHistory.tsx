@@ -83,7 +83,7 @@ export function OnChainHandHistory({
             {/* Community Cards */}
             <div className="mb-2">
               <span className="text-xs text-[var(--text-secondary)]">Board: </span>
-              <span className="font-mono">
+              <span className="font-mono text-lg font-semibold">
                 {hand.communityCards.length > 0 ? (
                   hand.communityCards.map((card, i) => (
                     <span key={i} className={`mx-0.5 ${getSuitColor(card)}`}>
@@ -91,7 +91,7 @@ export function OnChainHandHistory({
                     </span>
                   ))
                 ) : (
-                  <span className="text-[var(--text-secondary)]">No cards</span>
+                  <span className="text-[var(--text-secondary)] text-sm">No cards</span>
                 )}
               </span>
             </div>
@@ -102,27 +102,37 @@ export function OnChainHandHistory({
             </div>
 
             {/* Player Results */}
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               {hand.players.map((player, pIdx) => {
                 const isCurrentPlayer = player.player === currentPlayerPubkey;
-                const isWinner = !player.folded && player.handRank !== null;
+                const isWinner = player.chipsWon > 0;
+                const netResult = player.chipsWon - player.chipsBet;
 
                 return (
                   <div
                     key={pIdx}
-                    className={`text-xs flex items-center gap-2 ${isCurrentPlayer ? "text-[var(--gold)]" : "text-[var(--text-secondary)]"}`}
+                    className={`text-sm flex items-center gap-2 py-1 px-2 rounded-lg transition-all ${
+                      isWinner
+                        ? "bg-[var(--gold-dark)]/20 border border-[var(--gold-main)]/30"
+                        : "bg-transparent"
+                    } ${isCurrentPlayer ? "text-[var(--gold-light)]" : "text-[var(--text-secondary)]"}`}
                   >
+                    {/* Winner trophy */}
+                    {isWinner && (
+                      <span className="text-base" title="Winner">🏆</span>
+                    )}
+
                     {/* Seat indicator */}
-                    <span className="w-14">
+                    <span className={`${isWinner ? "w-12" : "w-16"} font-medium`}>
                       Seat {player.seatIndex + 1}
-                      {isCurrentPlayer && " (you)"}
+                      {isCurrentPlayer && <span className="text-[10px] ml-0.5">(you)</span>}
                     </span>
 
-                    {/* Cards or folded */}
+                    {/* Cards or folded - larger font */}
                     {player.folded ? (
-                      <span className="text-gray-500 italic">folded</span>
+                      <span className="text-gray-500 italic text-xs">folded</span>
                     ) : player.holeCards ? (
-                      <span className="font-mono">
+                      <span className="font-mono text-base font-semibold">
                         <span className={getSuitColor(player.holeCards[0])}>
                           {formatCard(player.holeCards[0])}
                         </span>
@@ -132,19 +142,35 @@ export function OnChainHandHistory({
                         </span>
                       </span>
                     ) : (
-                      <span className="text-gray-500">hidden</span>
+                      <span className="text-gray-500 text-xs">hidden</span>
                     )}
 
-                    {/* Hand rank */}
+                    {/* Hand rank - colored based on win/loss */}
                     {player.handRank && (
-                      <span className="text-[var(--text-primary)]">
+                      <span className={`text-xs ${isWinner ? "text-green-400 font-semibold" : "text-gray-400"}`}>
                         - {player.handRank}
+                      </span>
+                    )}
+
+                    {/* Spacer */}
+                    <span className="flex-1" />
+
+                    {/* Win/Loss amount */}
+                    {!player.folded && (
+                      <span className={`text-xs font-mono font-semibold ${
+                        netResult > 0
+                          ? "text-green-400"
+                          : netResult < 0
+                            ? "text-red-400"
+                            : "text-gray-400"
+                      }`}>
+                        {netResult > 0 ? "+" : ""}{lamportsToSol(netResult).toFixed(2)} SOL
                       </span>
                     )}
 
                     {/* All-in indicator */}
                     {player.allIn && (
-                      <span className="text-orange-400 text-[10px]">ALL-IN</span>
+                      <span className="text-orange-400 text-[10px] font-bold">ALL-IN</span>
                     )}
                   </div>
                 );

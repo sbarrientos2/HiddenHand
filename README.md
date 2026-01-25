@@ -47,15 +47,16 @@ HiddenHand combines three cryptographic layers to eliminate trust requirements:
 
 ### Layer 2: Card Encryption (Inco Lightning FHE)
 
-**What it does:** Encrypts cards so that only the intended player can decrypt them.
+**What it does:** Encrypts all cards—both hole cards AND community cards—so no one can see them prematurely.
 
 **How it works:**
-1. After shuffle, each card is encrypted via Inco's Fully Homomorphic Encryption
+1. After shuffle, ALL 52 cards are encrypted via Inco's Fully Homomorphic Encryption
 2. Cards are stored on-chain as encrypted `u128` handles
-3. Decryption allowances are granted only to the card owner
-4. Players decrypt client-side using their wallet signature + Inco SDK
+3. **Hole cards**: Decryption allowances granted only to the card owner
+4. **Community cards**: Remain encrypted until flop/turn/river, then revealed with Ed25519 verification
+5. Players decrypt their hole cards client-side using wallet signature + Inco SDK
 
-**Security guarantee:** Cards cannot be decrypted without the player's wallet signature. The program, other players, and even the table authority cannot see encrypted cards.
+**Security guarantee:** No one can see the flop, turn, or river in advance. Hole cards cannot be decrypted without the player's wallet signature. The program, other players, and even the table authority cannot see encrypted cards.
 
 ### Layer 3: Verified Reveals (Ed25519 Signatures)
 
@@ -74,7 +75,8 @@ HiddenHand combines three cryptographic layers to eliminate trust requirements:
 | Attack Vector | Prevention |
 |--------------|------------|
 | Rigged shuffle | VRF provides verifiable randomness with on-chain proof |
-| Peeking at cards | FHE encryption—only card owner can decrypt |
+| Peeking at hole cards | FHE encryption—only card owner can decrypt |
+| Peeking at community cards | FHE encryption—revealed only at flop/turn/river with Ed25519 proof |
 | Card forgery at showdown | Ed25519 signatures verify card authenticity |
 | Seed prediction | VRF seed never stored, only in-memory during callback |
 | Replay attacks | Unique encryption handles per card per hand |

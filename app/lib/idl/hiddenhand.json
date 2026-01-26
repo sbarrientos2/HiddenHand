@@ -1,0 +1,3166 @@
+{
+  "address": "HS3GdhRBU3jMT4G6ogKVktKaibqsMhPRhDhNsmgzeB8Q",
+  "metadata": {
+    "name": "hiddenhand",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Created with Anchor"
+  },
+  "docs": [
+    "HiddenHand - Privacy Poker on Solana",
+    "Using MagicBlock VRF for provably fair shuffling and",
+    "Inco FHE for cryptographic card privacy"
+  ],
+  "instructions": [
+    {
+      "name": "callback_shuffle",
+      "docs": [
+        "VRF callback - ATOMIC shuffle + encrypt",
+        "Called by VRF oracle, not directly by users",
+        "",
+        "SECURITY: The VRF seed is NEVER stored in account state!",
+        "Shuffle and encryption happen atomically in this single transaction."
+      ],
+      "discriminator": [
+        61,
+        96,
+        191,
+        76,
+        226,
+        182,
+        70,
+        95
+      ],
+      "accounts": [
+        {
+          "name": "vrf_program_identity",
+          "signer": true,
+          "address": "9irBy75QS2BN81FUgXuHcjqceJJRuc9oDkAe8TKVvvAw"
+        },
+        {
+          "name": "table",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  97,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table.table_id",
+                "account": "Table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "hand_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  97,
+                  110,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table"
+              },
+              {
+                "kind": "account",
+                "path": "table.hand_number",
+                "account": "Table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "deck_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  99,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table"
+              },
+              {
+                "kind": "account",
+                "path": "table.hand_number",
+                "account": "Table"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "randomness",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "close_inactive_table",
+      "docs": [
+        "Close an inactive table and return all funds to players",
+        "Can be called by anyone after 1 hour of inactivity",
+        "Table must be in Waiting status (not mid-hand)",
+        "All seated players receive their chips back"
+      ],
+      "discriminator": [
+        53,
+        209,
+        84,
+        38,
+        178,
+        114,
+        230,
+        103
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "docs": [
+            "Anyone can call this after timeout"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "table",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  97,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table.table_id",
+                "account": "Table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "docs": [
+            "The vault holding player funds"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "create_table",
+      "docs": [
+        "Create a new poker table"
+      ],
+      "discriminator": [
+        214,
+        142,
+        131,
+        250,
+        242,
+        83,
+        135,
+        185
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "table",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  97,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "table_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "docs": [
+            "Vault to hold player buy-ins"
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "table_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "small_blind",
+          "type": "u64"
+        },
+        {
+          "name": "big_blind",
+          "type": "u64"
+        },
+        {
+          "name": "min_buy_in",
+          "type": "u64"
+        },
+        {
+          "name": "max_buy_in",
+          "type": "u64"
+        },
+        {
+          "name": "max_players",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "deal_cards",
+      "docs": [
+        "Deal cards to all players and post blinds",
+        "SB and BB seats are named accounts, others via remaining_accounts",
+        "NOTE: For provably fair games, use request_shuffle + callback_shuffle instead",
+        "WARNING: This stores plaintext cards - use deal_cards_encrypted for privacy!"
+      ],
+      "discriminator": [
+        38,
+        218,
+        247,
+        103,
+        218,
+        237,
+        24,
+        65
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "docs": [
+            "Anyone can call, but non-authority must wait for timeout"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "table",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  97,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table.table_id",
+                "account": "Table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "hand_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  97,
+                  110,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table"
+              },
+              {
+                "kind": "account",
+                "path": "table.hand_number",
+                "account": "Table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "deck_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  99,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table"
+              },
+              {
+                "kind": "account",
+                "path": "table.hand_number",
+                "account": "Table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "sb_seat",
+          "docs": [
+            "Small blind player seat"
+          ],
+          "writable": true
+        },
+        {
+          "name": "bb_seat",
+          "docs": [
+            "Big blind player seat"
+          ],
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "deal_cards_encrypted",
+      "docs": [
+        "Deal cards with ATOMIC Inco encryption (RECOMMENDED for privacy)",
+        "Cards are encrypted immediately during dealing - NEVER stored as plaintext",
+        "After calling this, use grant_card_allowance for each player to enable decryption"
+      ],
+      "discriminator": [
+        224,
+        161,
+        115,
+        102,
+        206,
+        20,
+        208,
+        215
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "docs": [
+            "The caller (authority can call immediately, others must wait for timeout)"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "table",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  97,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table.table_id",
+                "account": "Table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "hand_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  97,
+                  110,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table"
+              },
+              {
+                "kind": "account",
+                "path": "table.hand_number",
+                "account": "Table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "deck_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  99,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table"
+              },
+              {
+                "kind": "account",
+                "path": "table.hand_number",
+                "account": "Table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "sb_seat",
+          "docs": [
+            "Small blind player seat"
+          ],
+          "writable": true
+        },
+        {
+          "name": "bb_seat",
+          "docs": [
+            "Big blind player seat"
+          ],
+          "writable": true
+        },
+        {
+          "name": "inco_program",
+          "docs": [
+            "The Inco Lightning program for encryption"
+          ],
+          "address": "5sjEbPiqgZrYwR31ahR6Uk9wf5awoX61YGg7jExQSwaj"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "deal_cards_vrf",
+      "docs": [
+        "DEPRECATED: Use request_shuffle instead!",
+        "Deal hole cards - kept for backwards compatibility only.",
+        "With Modified Option B, callback_shuffle handles everything atomically."
+      ],
+      "discriminator": [
+        42,
+        112,
+        70,
+        2,
+        154,
+        239,
+        160,
+        161
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "table",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  97,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table.table_id",
+                "account": "Table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "hand_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  97,
+                  110,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table"
+              },
+              {
+                "kind": "account",
+                "path": "table.hand_number",
+                "account": "Table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "deck_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  99,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table"
+              },
+              {
+                "kind": "account",
+                "path": "table.hand_number",
+                "account": "Table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "sb_seat",
+          "docs": [
+            "Small blind player seat"
+          ],
+          "writable": true
+        },
+        {
+          "name": "bb_seat",
+          "docs": [
+            "Big blind player seat"
+          ],
+          "writable": true
+        },
+        {
+          "name": "inco_program",
+          "docs": [
+            "The Inco Lightning program for encryption"
+          ],
+          "address": "5sjEbPiqgZrYwR31ahR6Uk9wf5awoX61YGg7jExQSwaj"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "encrypt_hole_cards",
+      "docs": [
+        "Phase 1: Encrypt hole cards using Inco FHE",
+        "Called via Magic Actions after ER commit",
+        "Encrypts plaintext cards and stores handles in PlayerSeat",
+        "Call once per player with their seat_index",
+        "IMPORTANT: After this, call grant_card_allowance to enable decryption"
+      ],
+      "discriminator": [
+        40,
+        216,
+        64,
+        170,
+        117,
+        35,
+        224,
+        127
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "docs": [
+            "The table authority"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "table",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  97,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table.table_id",
+                "account": "Table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "hand_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  97,
+                  110,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table"
+              },
+              {
+                "kind": "account",
+                "path": "table.hand_number",
+                "account": "Table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "player_seat",
+          "docs": [
+            "The player seat to encrypt cards for"
+          ],
+          "writable": true
+        },
+        {
+          "name": "inco_program",
+          "docs": [
+            "The Inco Lightning program for encryption"
+          ],
+          "address": "5sjEbPiqgZrYwR31ahR6Uk9wf5awoX61YGg7jExQSwaj"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "seat_index",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "grant_card_allowance",
+      "docs": [
+        "Phase 2: Grant decryption allowance for encrypted cards",
+        "Must be called AFTER encrypt_hole_cards",
+        "Client should derive allowance PDAs from stored handles:",
+        "PDA = [\"allowance\", handle.to_le_bytes(), player_pubkey]"
+      ],
+      "discriminator": [
+        185,
+        114,
+        158,
+        112,
+        132,
+        195,
+        242,
+        109
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "docs": [
+            "The table authority - only authority can grant allowances"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "table",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  97,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table.table_id",
+                "account": "Table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "player_seat",
+          "docs": [
+            "The player seat with encrypted cards"
+          ]
+        },
+        {
+          "name": "allowance_card1",
+          "docs": [
+            "Allowance account for card 1",
+            "Must be PDA: [\"allowance\", hole_card_1.to_le_bytes(), player_pubkey]"
+          ],
+          "writable": true
+        },
+        {
+          "name": "allowance_card2",
+          "docs": [
+            "Allowance account for card 2",
+            "Must be PDA: [\"allowance\", hole_card_2.to_le_bytes(), player_pubkey]"
+          ],
+          "writable": true
+        },
+        {
+          "name": "player",
+          "docs": [
+            "The player who should be able to decrypt"
+          ]
+        },
+        {
+          "name": "inco_program",
+          "docs": [
+            "The Inco Lightning program"
+          ],
+          "address": "5sjEbPiqgZrYwR31ahR6Uk9wf5awoX61YGg7jExQSwaj"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "seat_index",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "grant_community_allowances",
+      "docs": [
+        "Grant community card allowances to a player",
+        "This enables the player to decrypt community cards via Inco, which is needed",
+        "if they want to reveal community cards when authority is AFK",
+        "",
+        "Called by authority after VRF shuffle for each active player.",
+        "remaining_accounts: 5 allowance PDAs for community cards [card0-card4]"
+      ],
+      "discriminator": [
+        96,
+        96,
+        218,
+        243,
+        156,
+        151,
+        51,
+        191
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "docs": [
+            "Authority granting allowances (only authority can grant)"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "table",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  97,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table.table_id",
+                "account": "Table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "hand_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  97,
+                  110,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table"
+              },
+              {
+                "kind": "account",
+                "path": "table.hand_number",
+                "account": "Table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "deck_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  99,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table"
+              },
+              {
+                "kind": "account",
+                "path": "table.hand_number",
+                "account": "Table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "player_seat",
+          "docs": [
+            "The player seat to grant allowances for"
+          ]
+        },
+        {
+          "name": "player",
+          "docs": [
+            "The player who should be able to decrypt"
+          ]
+        },
+        {
+          "name": "inco_program",
+          "docs": [
+            "The Inco Lightning program"
+          ],
+          "address": "5sjEbPiqgZrYwR31ahR6Uk9wf5awoX61YGg7jExQSwaj"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "seat_index",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "grant_own_allowance",
+      "docs": [
+        "Allow player to grant their OWN decryption allowance after timeout",
+        "If authority doesn't grant allowances within 60 seconds, players can self-grant",
+        "This prevents the game from getting stuck if authority is AFK"
+      ],
+      "discriminator": [
+        89,
+        131,
+        35,
+        202,
+        197,
+        228,
+        1,
+        16
+      ],
+      "accounts": [
+        {
+          "name": "player",
+          "docs": [
+            "The player granting their own allowance (must be the seat owner)"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "table",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  97,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table.table_id",
+                "account": "Table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "hand_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  97,
+                  110,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table"
+              },
+              {
+                "kind": "account",
+                "path": "table.hand_number",
+                "account": "Table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "player_seat",
+          "writable": true
+        },
+        {
+          "name": "allowance_card1",
+          "docs": [
+            "Allowance account for card 1 (will be created by Inco CPI)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "allowance_card2",
+          "docs": [
+            "Allowance account for card 2 (will be created by Inco CPI)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "inco_program",
+          "docs": [
+            "The Inco Lightning program"
+          ],
+          "address": "5sjEbPiqgZrYwR31ahR6Uk9wf5awoX61YGg7jExQSwaj"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "seat_index",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "join_table",
+      "docs": [
+        "Join a table with a buy-in"
+      ],
+      "discriminator": [
+        14,
+        117,
+        84,
+        51,
+        95,
+        146,
+        171,
+        70
+      ],
+      "accounts": [
+        {
+          "name": "player",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "table",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  97,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table.table_id",
+                "account": "Table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "player_seat",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "docs": [
+            "Vault to receive buy-in (SystemAccount validates System Program ownership)"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "seat_index",
+          "type": "u8"
+        },
+        {
+          "name": "buy_in",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "leave_table",
+      "docs": [
+        "Leave a table and cash out"
+      ],
+      "discriminator": [
+        163,
+        153,
+        94,
+        194,
+        19,
+        106,
+        113,
+        32
+      ],
+      "accounts": [
+        {
+          "name": "player",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "player_seat"
+          ]
+        },
+        {
+          "name": "table",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  97,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table.table_id",
+                "account": "Table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "player_seat",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "docs": [
+            "Vault to withdraw from (SystemAccount validates System Program ownership)"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "player_action",
+      "docs": [
+        "Perform a player action (fold, check, call, raise, all-in)"
+      ],
+      "discriminator": [
+        37,
+        85,
+        25,
+        135,
+        200,
+        116,
+        96,
+        101
+      ],
+      "accounts": [
+        {
+          "name": "player",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "player_seat"
+          ]
+        },
+        {
+          "name": "table",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  97,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table.table_id",
+                "account": "Table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "hand_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  97,
+                  110,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table"
+              },
+              {
+                "kind": "account",
+                "path": "table.hand_number",
+                "account": "Table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "deck_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  99,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table"
+              },
+              {
+                "kind": "account",
+                "path": "table.hand_number",
+                "account": "Table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "player_seat",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "action",
+          "type": {
+            "defined": {
+              "name": "Action"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "request_shuffle",
+      "docs": [
+        "Request VRF randomness for card shuffling",
+        "This initiates the shuffle - VRF oracle will callback with randomness",
+        "",
+        "IMPORTANT: Pass all player seat accounts as remaining_accounts!",
+        "The callback will shuffle + encrypt cards atomically."
+      ],
+      "discriminator": [
+        130,
+        20,
+        53,
+        22,
+        23,
+        102,
+        225,
+        135
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "table",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  97,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table.table_id",
+                "account": "Table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "hand_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  97,
+                  110,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table"
+              },
+              {
+                "kind": "account",
+                "path": "table.hand_number",
+                "account": "Table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "deck_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  99,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table"
+              },
+              {
+                "kind": "account",
+                "path": "table.hand_number",
+                "account": "Table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "oracle_queue",
+          "writable": true,
+          "address": "Cuj97ggrhhidhbu39TijNVqE74xvKJ69gDervRUXAxGh"
+        },
+        {
+          "name": "inco_program",
+          "docs": [
+            "The Inco Lightning program for encryption (passed to callback)"
+          ],
+          "address": "5sjEbPiqgZrYwR31ahR6Uk9wf5awoX61YGg7jExQSwaj"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "program_identity",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  100,
+                  101,
+                  110,
+                  116,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vrf_program",
+          "address": "Vrf1RNUjXmQGjmQrQLvJHs9SNkvDJEsRVFPkfSQUwGz"
+        },
+        {
+          "name": "slot_hashes",
+          "address": "SysvarS1otHashes111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "reveal_cards",
+      "docs": [
+        "Reveal cards at showdown with Ed25519 signature verification",
+        "",
+        "Players call this at Showdown phase to reveal their decrypted cards.",
+        "The transaction must include Ed25519 verification instructions from",
+        "Inco's attested decryption to prove the revealed values are correct."
+      ],
+      "discriminator": [
+        49,
+        29,
+        188,
+        98,
+        30,
+        81,
+        141,
+        168
+      ],
+      "accounts": [
+        {
+          "name": "player",
+          "docs": [
+            "The player revealing their cards (must be the seat owner)"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "table",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  97,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table.table_id",
+                "account": "Table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "hand_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  97,
+                  110,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table"
+              },
+              {
+                "kind": "account",
+                "path": "table.hand_number",
+                "account": "Table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "player_seat",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  101,
+                  97,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table"
+              },
+              {
+                "kind": "account",
+                "path": "player_seat.seat_index",
+                "account": "PlayerSeat"
+              }
+            ]
+          }
+        },
+        {
+          "name": "instructions_sysvar",
+          "docs": [
+            "Instructions sysvar for Ed25519 signature verification"
+          ],
+          "address": "Sysvar1nstructions1111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "card1",
+          "type": "u8"
+        },
+        {
+          "name": "card2",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "reveal_community",
+      "docs": [
+        "Reveal community cards (flop/turn/river) with Ed25519 signature verification",
+        "",
+        "Authority calls this when betting round completes and community cards need to be revealed.",
+        "Community cards are encrypted during VRF shuffle for privacy - this reveals them.",
+        "",
+        "The transaction must include Ed25519 verification instructions for each card from",
+        "Inco's attested decryption to prove the revealed values are correct.",
+        "",
+        "Card count depends on phase:",
+        "- PreFlop -> Flop: 3 cards (or 5 if all-in runout)",
+        "- Flop -> Turn: 1 card (or 2 if all-in runout)",
+        "- Turn -> River: 1 card"
+      ],
+      "discriminator": [
+        197,
+        172,
+        51,
+        186,
+        18,
+        152,
+        175,
+        87
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "docs": [
+            "Caller revealing the community cards",
+            "Authority can call immediately, others must wait for timeout"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "table",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  97,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table.table_id",
+                "account": "Table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "hand_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  97,
+                  110,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table"
+              },
+              {
+                "kind": "account",
+                "path": "table.hand_number",
+                "account": "Table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "deck_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  99,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table"
+              },
+              {
+                "kind": "account",
+                "path": "table.hand_number",
+                "account": "Table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "instructions_sysvar",
+          "docs": [
+            "Instructions sysvar for Ed25519 signature verification"
+          ],
+          "address": "Sysvar1nstructions1111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "cards",
+          "type": "bytes"
+        }
+      ]
+    },
+    {
+      "name": "showdown",
+      "docs": [
+        "Showdown - evaluate hands and distribute pot",
+        "Remaining accounts should be all player seat accounts"
+      ],
+      "discriminator": [
+        42,
+        62,
+        227,
+        166,
+        247,
+        144,
+        182,
+        162
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "docs": [
+            "Anyone can call showdown, but non-authority must wait for timeout"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "table",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  97,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table.table_id",
+                "account": "Table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "hand_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  97,
+                  110,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table"
+              },
+              {
+                "kind": "account",
+                "path": "table.hand_number",
+                "account": "Table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "docs": [
+            "Vault holding player chips"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "start_hand",
+      "docs": [
+        "Start a new hand (table authority only)"
+      ],
+      "discriminator": [
+        50,
+        173,
+        164,
+        52,
+        65,
+        42,
+        197,
+        135
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "docs": [
+            "Anyone can call, but non-authority must wait for timeout"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "table",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  97,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table.table_id",
+                "account": "Table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "hand_state",
+          "writable": true
+        },
+        {
+          "name": "deck_state",
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "timeout_player",
+      "docs": [
+        "Timeout a player who hasn't acted within 60 seconds",
+        "Anyone can call this to keep the game moving",
+        "Auto-checks if possible, otherwise auto-folds"
+      ],
+      "discriminator": [
+        102,
+        1,
+        155,
+        241,
+        165,
+        224,
+        122,
+        149
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "docs": [
+            "Anyone can trigger a timeout (doesn't need to be authority or the timed-out player)"
+          ],
+          "signer": true
+        },
+        {
+          "name": "table",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  97,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table.table_id",
+                "account": "Table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "hand_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  97,
+                  110,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table"
+              },
+              {
+                "kind": "account",
+                "path": "table.hand_number",
+                "account": "Table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "deck_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  99,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table"
+              },
+              {
+                "kind": "account",
+                "path": "table.hand_number",
+                "account": "Table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "player_seat",
+          "docs": [
+            "The seat of the player being timed out"
+          ],
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "timeout_reveal",
+      "docs": [
+        "Timeout a player who hasn't revealed cards at showdown",
+        "After 3 minutes without revealing, any player can call this to \"muck\" the non-revealer",
+        "Mucked players forfeit their claim to the pot (standard poker rules)"
+      ],
+      "discriminator": [
+        121,
+        66,
+        126,
+        106,
+        105,
+        217,
+        15,
+        105
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "docs": [
+            "Anyone can call this after timeout"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "table",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  97,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table.table_id",
+                "account": "Table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "hand_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  97,
+                  110,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table"
+              },
+              {
+                "kind": "account",
+                "path": "table.hand_number",
+                "account": "Table"
+              }
+            ]
+          }
+        },
+        {
+          "name": "target_player",
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "target_seat",
+          "type": "u8"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "DeckState",
+      "discriminator": [
+        190,
+        100,
+        169,
+        83,
+        107,
+        23,
+        168,
+        21
+      ]
+    },
+    {
+      "name": "HandState",
+      "discriminator": [
+        85,
+        99,
+        137,
+        55,
+        120,
+        251,
+        40,
+        38
+      ]
+    },
+    {
+      "name": "PlayerSeat",
+      "discriminator": [
+        100,
+        254,
+        179,
+        67,
+        8,
+        150,
+        238,
+        232
+      ]
+    },
+    {
+      "name": "Table",
+      "discriminator": [
+        34,
+        100,
+        138,
+        97,
+        236,
+        129,
+        230,
+        112
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "HandCompleted",
+      "discriminator": [
+        84,
+        11,
+        82,
+        98,
+        9,
+        74,
+        200,
+        229
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "TableFull",
+      "msg": "Table is full"
+    },
+    {
+      "code": 6001,
+      "name": "NotEnoughPlayers",
+      "msg": "Table is not full enough to start"
+    },
+    {
+      "code": 6002,
+      "name": "PlayerNotAtTable",
+      "msg": "Player is not at this table"
+    },
+    {
+      "code": 6003,
+      "name": "PlayerAlreadyAtTable",
+      "msg": "Player is already at this table"
+    },
+    {
+      "code": 6004,
+      "name": "InvalidSeatIndex",
+      "msg": "Invalid seat index"
+    },
+    {
+      "code": 6005,
+      "name": "SeatOccupied",
+      "msg": "Seat is already occupied"
+    },
+    {
+      "code": 6006,
+      "name": "SeatEmpty",
+      "msg": "Seat is empty"
+    },
+    {
+      "code": 6007,
+      "name": "NotPlayersTurn",
+      "msg": "Not player's turn"
+    },
+    {
+      "code": 6008,
+      "name": "InvalidAction",
+      "msg": "Invalid action for current game state"
+    },
+    {
+      "code": 6009,
+      "name": "InsufficientChips",
+      "msg": "Insufficient chips"
+    },
+    {
+      "code": 6010,
+      "name": "InvalidBuyIn",
+      "msg": "Buy-in amount out of range"
+    },
+    {
+      "code": 6011,
+      "name": "HandNotInProgress",
+      "msg": "Hand is not in progress"
+    },
+    {
+      "code": 6012,
+      "name": "HandAlreadyInProgress",
+      "msg": "Hand is already in progress"
+    },
+    {
+      "code": 6013,
+      "name": "CannotFold",
+      "msg": "Cannot fold - no bet to fold from"
+    },
+    {
+      "code": 6014,
+      "name": "CannotCheck",
+      "msg": "Cannot check - must call or raise"
+    },
+    {
+      "code": 6015,
+      "name": "RaiseTooSmall",
+      "msg": "Raise amount too small"
+    },
+    {
+      "code": 6016,
+      "name": "BettingRoundNotComplete",
+      "msg": "Betting round not complete"
+    },
+    {
+      "code": 6017,
+      "name": "InvalidPhase",
+      "msg": "Invalid phase for this action"
+    },
+    {
+      "code": 6018,
+      "name": "ActionTimeout",
+      "msg": "Player action timeout"
+    },
+    {
+      "code": 6019,
+      "name": "ActionNotTimedOut",
+      "msg": "Player has not timed out yet - must wait 60 seconds"
+    },
+    {
+      "code": 6020,
+      "name": "UnauthorizedAuthority",
+      "msg": "Only table authority can perform this action"
+    },
+    {
+      "code": 6021,
+      "name": "ShowdownRequiresPlayers",
+      "msg": "Showdown requires at least 2 active players"
+    },
+    {
+      "code": 6022,
+      "name": "InvalidCardIndex",
+      "msg": "Invalid card index"
+    },
+    {
+      "code": 6023,
+      "name": "DeckAlreadyShuffled",
+      "msg": "Deck already shuffled for this hand"
+    },
+    {
+      "code": 6024,
+      "name": "DeckNotShuffled",
+      "msg": "Deck not yet shuffled - request VRF shuffle first"
+    },
+    {
+      "code": 6025,
+      "name": "CardsNotDealt",
+      "msg": "Cards not yet dealt"
+    },
+    {
+      "code": 6026,
+      "name": "AllCardsRevealed",
+      "msg": "All community cards already revealed"
+    },
+    {
+      "code": 6027,
+      "name": "PlayerFolded",
+      "msg": "Player has already folded"
+    },
+    {
+      "code": 6028,
+      "name": "PlayerAlreadyAllIn",
+      "msg": "Player is already all-in"
+    },
+    {
+      "code": 6029,
+      "name": "TableNotWaiting",
+      "msg": "Table is not in waiting state"
+    },
+    {
+      "code": 6030,
+      "name": "CannotLeaveDuringHand",
+      "msg": "Cannot leave during active hand"
+    },
+    {
+      "code": 6031,
+      "name": "Overflow",
+      "msg": "Arithmetic overflow"
+    },
+    {
+      "code": 6032,
+      "name": "DuplicateAccount",
+      "msg": "Duplicate accounts provided"
+    },
+    {
+      "code": 6033,
+      "name": "InvalidRemainingAccounts",
+      "msg": "Invalid remaining accounts"
+    },
+    {
+      "code": 6034,
+      "name": "InvalidAccountCount",
+      "msg": "Invalid account count - expected multiple of 3 for encryption"
+    },
+    {
+      "code": 6035,
+      "name": "CardsAlreadyRevealed",
+      "msg": "Cards have already been revealed"
+    },
+    {
+      "code": 6036,
+      "name": "PlayerNotActive",
+      "msg": "Player is not active (folded or not playing)"
+    },
+    {
+      "code": 6037,
+      "name": "InvalidCard",
+      "msg": "Invalid card value - must be 0-51"
+    },
+    {
+      "code": 6038,
+      "name": "Ed25519VerificationFailed",
+      "msg": "Ed25519 signature verification failed"
+    },
+    {
+      "code": 6039,
+      "name": "PlayersNotRevealed",
+      "msg": "All active players must reveal before showdown can complete"
+    },
+    {
+      "code": 6040,
+      "name": "TimeoutNotReached",
+      "msg": "Timeout not reached - must wait longer"
+    },
+    {
+      "code": 6041,
+      "name": "NotYourSeat",
+      "msg": "This is not your seat"
+    },
+    {
+      "code": 6042,
+      "name": "CardsNotEncrypted",
+      "msg": "Cards are not encrypted yet"
+    },
+    {
+      "code": 6043,
+      "name": "HandInProgress",
+      "msg": "Cannot perform this action while hand is in progress"
+    },
+    {
+      "code": 6044,
+      "name": "AwaitingCommunityReveal",
+      "msg": "Waiting for community cards to be revealed - authority must call reveal_community"
+    },
+    {
+      "code": 6045,
+      "name": "CommunityNotReady",
+      "msg": "Community cards not ready for reveal - betting round not complete"
+    },
+    {
+      "code": 6046,
+      "name": "InvalidCommunityCards",
+      "msg": "Invalid community cards for current phase"
+    }
+  ],
+  "types": [
+    {
+      "name": "Action",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Fold"
+          },
+          {
+            "name": "Check"
+          },
+          {
+            "name": "Call"
+          },
+          {
+            "name": "Raise",
+            "fields": [
+              {
+                "name": "amount",
+                "type": "u64"
+              }
+            ]
+          },
+          {
+            "name": "AllIn"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DeckState",
+      "docs": [
+        "Encrypted deck state for a hand",
+        "Cards are stored as Inco encrypted handles",
+        "",
+        "SECURITY NOTE: The VRF seed is NEVER stored here!",
+        "It only exists in memory during the atomic shuffle+encrypt in callback_shuffle.",
+        "This eliminates the account state leak vector."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "hand",
+            "docs": [
+              "Reference to hand"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "cards",
+            "docs": [
+              "Shuffled encrypted cards (Inco handles)",
+              "Each u128 is a handle to an encrypted card value (0-51)",
+              "First 5 cards (indices 0-4) are community cards (plaintext until revealed)",
+              "Remaining cards are encrypted hole cards"
+            ],
+            "type": {
+              "array": [
+                "u128",
+                52
+              ]
+            }
+          },
+          {
+            "name": "deal_index",
+            "docs": [
+              "Next card index to deal"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "is_shuffled",
+            "docs": [
+              "Whether deck has been shuffled and cards encrypted"
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "_reserved",
+            "docs": [
+              "Reserved space for future use (maintains account size compatibility)",
+              "Previously: vrf_seed [u8; 32] + seed_received bool = 33 bytes"
+            ],
+            "type": {
+              "array": [
+                "u8",
+                33
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "GamePhase",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Dealing"
+          },
+          {
+            "name": "PreFlop"
+          },
+          {
+            "name": "Flop"
+          },
+          {
+            "name": "Turn"
+          },
+          {
+            "name": "River"
+          },
+          {
+            "name": "Showdown"
+          },
+          {
+            "name": "Settled"
+          }
+        ]
+      }
+    },
+    {
+      "name": "HandCompleted",
+      "docs": [
+        "Emitted when a hand completes (showdown or everyone folds)",
+        "Contains all information needed to reconstruct and verify the hand"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "table_id",
+            "docs": [
+              "Table identifier"
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "hand_number",
+            "docs": [
+              "Sequential hand number"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "docs": [
+              "Unix timestamp when hand completed"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "community_cards",
+            "docs": [
+              "Community cards (5 cards, 255 = not dealt)"
+            ],
+            "type": {
+              "array": [
+                "u8",
+                5
+              ]
+            }
+          },
+          {
+            "name": "total_pot",
+            "docs": [
+              "Total pot that was distributed"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "player_count",
+            "docs": [
+              "Number of players who participated"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "results",
+            "docs": [
+              "Results for each player (up to 6)",
+              "Using fixed array because Vec has variable size issues with events"
+            ],
+            "type": {
+              "array": [
+                {
+                  "defined": {
+                    "name": "PlayerHandResult"
+                  }
+                },
+                6
+              ]
+            }
+          },
+          {
+            "name": "results_count",
+            "docs": [
+              "How many results are valid (rest are zeroed)"
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "HandState",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "table",
+            "docs": [
+              "Reference to parent table"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "hand_number",
+            "docs": [
+              "Hand number (matches table.hand_number when created)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "phase",
+            "docs": [
+              "Current phase of the hand"
+            ],
+            "type": {
+              "defined": {
+                "name": "GamePhase"
+              }
+            }
+          },
+          {
+            "name": "pot",
+            "docs": [
+              "Total pot in lamports"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "current_bet",
+            "docs": [
+              "Current bet to call"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "min_raise",
+            "docs": [
+              "Minimum raise amount"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "dealer_position",
+            "docs": [
+              "Dealer position for this hand"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "action_on",
+            "docs": [
+              "Seat index of player whose turn it is"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "community_cards",
+            "docs": [
+              "Community cards (card indices 0-51, 255 = not revealed)"
+            ],
+            "type": "bytes"
+          },
+          {
+            "name": "community_revealed",
+            "docs": [
+              "Number of community cards revealed (0, 3, 4, or 5)"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "active_players",
+            "docs": [
+              "Bitmap of players still active in hand"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "acted_this_round",
+            "docs": [
+              "Bitmap of players who have acted this round"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "active_count",
+            "docs": [
+              "Number of active players"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "all_in_players",
+            "docs": [
+              "Bitmap of players who are all-in"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "last_action_time",
+            "docs": [
+              "Last action timestamp for timeout tracking (unix timestamp)"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "hand_start_time",
+            "docs": [
+              "Timestamp when hand started (unix timestamp)"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "awaiting_community_reveal",
+            "docs": [
+              "Whether we're waiting for authority to reveal community cards",
+              "Set to true when betting round completes and phase needs to advance"
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump"
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PlayerHandResult",
+      "docs": [
+        "Individual player's result in a hand"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "player",
+            "docs": [
+              "Player's wallet pubkey"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "seat_index",
+            "docs": [
+              "Seat index (0-5)"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "hole_card_1",
+            "docs": [
+              "Hole cards (255 = not shown / folded)"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "hole_card_2",
+            "type": "u8"
+          },
+          {
+            "name": "hand_rank",
+            "docs": [
+              "Hand rank (0=HighCard, 1=Pair, ..., 9=RoyalFlush, 255=folded/not evaluated)"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "chips_won",
+            "docs": [
+              "Chips won this hand (0 if lost)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "chips_bet",
+            "docs": [
+              "Total bet this hand (chips put into pot)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "folded",
+            "docs": [
+              "Whether player folded"
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "all_in",
+            "docs": [
+              "Whether player was all-in"
+            ],
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PlayerSeat",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "table",
+            "docs": [
+              "Reference to table"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "player",
+            "docs": [
+              "Player's wallet"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "seat_index",
+            "docs": [
+              "Seat index (0 to max_players-1)"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "chips",
+            "docs": [
+              "Player's chip stack at this table"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "current_bet",
+            "docs": [
+              "Amount bet in current betting round"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "total_bet_this_hand",
+            "docs": [
+              "Total amount invested in current hand"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "hole_card_1",
+            "docs": [
+              "Encrypted hole card 1 (Inco handle)"
+            ],
+            "type": "u128"
+          },
+          {
+            "name": "hole_card_2",
+            "docs": [
+              "Encrypted hole card 2 (Inco handle)"
+            ],
+            "type": "u128"
+          },
+          {
+            "name": "revealed_card_1",
+            "docs": [
+              "Revealed plaintext card 1 (0-51, or 255 if not revealed)",
+              "Set via reveal_cards instruction with Ed25519 verification"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "revealed_card_2",
+            "docs": [
+              "Revealed plaintext card 2 (0-51, or 255 if not revealed)"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "cards_revealed",
+            "docs": [
+              "Whether player has revealed their cards for showdown"
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "status",
+            "docs": [
+              "Current status"
+            ],
+            "type": {
+              "defined": {
+                "name": "PlayerStatus"
+              }
+            }
+          },
+          {
+            "name": "has_acted",
+            "docs": [
+              "Has acted in current betting round"
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump"
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PlayerStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Sitting"
+          },
+          {
+            "name": "Playing"
+          },
+          {
+            "name": "Folded"
+          },
+          {
+            "name": "AllIn"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Table",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "docs": [
+              "Table creator/authority"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "table_id",
+            "docs": [
+              "Unique table identifier"
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "small_blind",
+            "docs": [
+              "Small blind amount in lamports"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "big_blind",
+            "docs": [
+              "Big blind amount (typically 2x small blind)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "min_buy_in",
+            "docs": [
+              "Minimum buy-in amount"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "max_buy_in",
+            "docs": [
+              "Maximum buy-in amount"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "max_players",
+            "docs": [
+              "Maximum players allowed (2-6)"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "current_players",
+            "docs": [
+              "Current number of seated players"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "status",
+            "docs": [
+              "Current table status"
+            ],
+            "type": {
+              "defined": {
+                "name": "TableStatus"
+              }
+            }
+          },
+          {
+            "name": "hand_number",
+            "docs": [
+              "Current hand number (increments each hand)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "occupied_seats",
+            "docs": [
+              "Bitmap of occupied seats (bit i = seat i occupied)"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "dealer_position",
+            "docs": [
+              "Dealer button position (seat index)"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "last_ready_time",
+            "docs": [
+              "Timestamp when table became ready for new hand (for timeout fallback)"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump"
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TableStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Waiting"
+          },
+          {
+            "name": "Playing"
+          },
+          {
+            "name": "Closed"
+          }
+        ]
+      }
+    }
+  ]
+}

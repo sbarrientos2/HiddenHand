@@ -153,7 +153,7 @@ These are infrastructure-level dependencies, not application-level trust. No sin
 ## Features
 
 - **Provably Fair Shuffling** — MagicBlock VRF provides verifiable randomness
-- **Encrypted Hole Cards** — Inco Lightning FHE (cards stored as encrypted u128 handles)
+- **Encrypted Cards** — All cards (hole + community) encrypted via Inco Lightning FHE
 - **Ed25519 Verified Reveals** — Covalidator signatures prove card authenticity
 - **Full Texas Hold'em** — PreFlop, Flop, Turn, River, Showdown
 - **On-Chain Hand History** — Every action emitted as Anchor events for audit trail
@@ -172,7 +172,7 @@ These are infrastructure-level dependencies, not application-level trust. No sin
 | Smart Contract | Anchor 0.32.1 / Rust | Game logic & state management |
 | Blockchain | Solana Devnet | Settlement & data availability |
 | Randomness | MagicBlock VRF | Provably fair card shuffling |
-| Encryption | Inco Lightning FHE | Hole card privacy |
+| Encryption | Inco Lightning FHE | Card privacy (hole + community) |
 | Signatures | Ed25519 | Card reveal verification |
 | Frontend | Next.js 15 / TypeScript | Player interface |
 | Wallet | Solana Wallet Adapter | Authentication & signing |

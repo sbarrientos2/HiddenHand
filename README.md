@@ -318,7 +318,7 @@ HiddenHand/
 - [x] Ed25519 signature verification
 - [x] MagicBlock VRF integration
 - [x] Inco FHE encryption
-- [ ] 3-minute demo video
+- [x] 3-minute demo video
 
 ---
 

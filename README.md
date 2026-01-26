@@ -187,6 +187,14 @@ These are infrastructure-level dependencies, not application-level trust. No sin
 
 ---
 
+## Live Demo
+
+**Play now:** [https://hiddenhand.netlify.app](https://hiddenhand.netlify.app)
+
+> **Note:** Due to browser popup policies, your wallet may not automatically open when approving transactions. If the wallet doesn't pop up, click on your wallet extension to see pending transaction requests.
+
+---
+
 ## Getting Started
 
 ### Prerequisites
@@ -201,7 +209,7 @@ These are infrastructure-level dependencies, not application-level trust. No sin
 
 ```bash
 # Clone the repository
-git clone https://github.com/sbarrientos2/HiddenHand.git
+git clone https://github.com/HiddenHandPoker/HiddenHand.git
 cd HiddenHand
 
 # Install dependencies
